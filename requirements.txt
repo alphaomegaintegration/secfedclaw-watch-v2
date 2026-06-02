@@ -1,0 +1,8 @@
+# SECFEDCLAW v0.2 runs on the Python 3.10+ standard library only.
+# No third-party packages are required for scan / backtest / dashboard / tests.
+#
+# Live data fetching uses urllib (stdlib). Optional accelerators below are NOT
+# required by any module here; uncomment only if you extend the project.
+#
+# numpy
+# pandas

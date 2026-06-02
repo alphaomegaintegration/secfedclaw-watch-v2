@@ -1,0 +1,40 @@
+# Generated outputs
+out/
+*.html
+!docs/**/*.html
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+
+# Secrets & credentials — NEVER commit
+.env
+.env.*
+*.env
+.hermes_history
+.anthropic_oauth.json
+auth.json
+*secret*
+*credential*
+*token*
+
+# Data / custody / state (kept out of source repo)
+*.db
+*.db-*
+*.bin
+artifacts/
+collections/
+timelines/
+state/
+*.csv
+
+# OS
+.DS_Store
+Thumbs.db
+
+# probe/scratch
+__probe*
