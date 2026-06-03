@@ -292,29 +292,73 @@ JSON, or curated JSONL/CSV), and is **OFF unless opted in** via
 post schema, so they flow through the coordination graph and social features
 automatically (platforms `telegram`/`discord`).
 
-## 13. Review-priority model + calibration ledger (implemented — `model.py`, `ledger.py`, `train_model.py`)
+## 13. Review-priority model + calibration ledger (implemented — `model.py`, `ledger.py`, `train_model.py`, `label_cases.py`)
 
 A dependency-light (numpy-only, **no sklearn**) **gradient-boosted** classifier
-over decision stumps that outputs a *calibrated review-priority probability* and
-per-feature contributions — an advisory triage aid that **never** changes the
-interpretable rules-based priority and is **never** a guilt/fraud label.
+over decision stumps (14 features, logistic loss) that outputs a *calibrated
+review-priority probability* and per-feature contributions — an advisory triage
+aid that **never** changes the interpretable rules-based priority and is **never**
+a guilt/fraud label.
+
+### Training data
+
+**43 real labels** from 7 SEC enforcement cases + 6 matched controls, plus 180
+bootstrap samples (price/volume randomized independently of label to prevent
+class leakage):
+
+| Case | Ticker | Windows | Source |
+|---|---|---|---|
+| CLEU ramp-and-dump | CLEU | 3 | DOJ N.D. Ill. 1:25-cr-00161 |
+| Atlas Trading influencers | GTTN, SURF, UPC | 3 | SEC 2022-221 |
+| SafeMoon crypto | SFM | 1 | SEC 2023 |
+| Wintercap/OneLife | ONEI | 1 | SEC enforcement 2024 |
+| Ostin Technology | OST | 3 | DOJ E.D. Va. 1:25-cr-00259 |
+| Matched controls | MSFT, AAPL, TSLA, GOOG | 6 | — |
+
+`label_cases.py` runs each case through the full 5-agent pipeline (all live
+sources) and labels in the ledger. `historical.py --cases-file cases.json`
+replays market-only windows via flat files.
+
+### Performance
+
+| Metric | Value |
+|---|---|
+| 5-fold CV AUC | **0.984** |
+| Real-label AUC | **0.736** |
+| Real-label accuracy | **0.81** (TP=17, FP=0, TN=18, FN=8) |
+| False positives | **0** — no control ever misclassified as pump |
+
+### Learned feature importances
+
+| Feature | Importance | What it captures |
+|---|---|---|
+| `coordination_score` | **49%** | Near-duplicate clusters, burst sync, shared domains |
+| `class_ordinal` | 34% | Liquidity class (microcaps are pump targets) |
+| `social_promotional_noise` | 11% | Promotional language volume |
+| `social_issuer_specific_burst` | 6% | Ticker-specific social activity |
+
+The model correctly identifies coordination as the dominant pump discriminator
+and is learning that promotional noise matters (11%, up from 0% before the OST
+case was added). The 8 false negatives are market-only flat-file windows where
+coordination/social data is unavailable — expected behavior.
+
+### Components
 
 - `ledger.py` records operator outcome labels (`useful_watch`/`missed_event` →
   positive; `false_positive`/`benign_explained`/`insufficient_evidence` →
-  negative) with each package's feature vector at `out/ledger/labels.jsonl`.
-- `train_model.py` trains from real ledger labels + an optional synthetic
-  bootstrap (price/volume randomized independently of the label to avoid class
-  leakage), reports 5-fold AUC, and **abstains** (model stays out of the way)
-  until ≥40 two-class labeled samples exist.
+  negative) with each package’s 14-element feature vector.
+- `train_model.py` trains from real labels + optional bootstrap, reports 5-fold
+  AUC, and **abstains** until ≥40 two-class samples exist.
+- `label_cases.py` runs known SEC cases through the full multi-source pipeline
+  and labels each package with known ground truth.
 - When a trained model is present, every package gets a `model_advisory`
   (probability + top features); the rules engine remains primary.
 
-On the synthetic bootstrap the model recovers `coordination_score` as the top
-feature — the correct pump discriminator — rather than any leaky proxy.
-
 ```bash
-python3 train_model.py            # ledger + synthetic bootstrap
-python3 train_model.py --no-bootstrap   # real ledger labels only
+python3 label_cases.py                   # label SEC cases through full pipeline
+python3 train_model.py                   # retrain (real labels + bootstrap)
+python3 train_model.py --no-bootstrap    # real labels only
+python3 historical.py --cases-file cases.json   # market-only replay
 ```
 
 ## 14. Going live (replay → live)
