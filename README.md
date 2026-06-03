@@ -320,7 +320,25 @@ After each daily run, a concise WATCH digest of the flagged (≥MEDIUM) tickers 
 delivered via Telegram (`TELEGRAM_BOT_TOKEN` + `TELEGRAM_HOME_CHANNEL`); if
 Telegram is unreachable/unconfigured it falls back to `out/digest_<UTC>.txt`.
 Run standalone with `python3 notify.py` (or `--print` to preview). Digest is
-review-priority context for the authorized user only — no trading signals.
+review-priority context for the authorized user only — no trading signals. The
+digest deep-links to the dashboard (see below).
+
+### View / publish the dashboard (`serve.py`)
+
+The dashboard is a single self-contained HTML file. To view it at a stable URL
+(and have the digest link to it), run a lightweight local server:
+
+```bash
+python3 serve.py                 # http://127.0.0.1:8787/  (localhost only)
+export SECFEDCLAW_DASHBOARD_URL=http://127.0.0.1:8787/dashboard_v2.html   # digest deep-link
+```
+
+**Privacy:** `serve.py` binds to **127.0.0.1 by default** — the dashboard carries
+enforcement-adjacent WATCH content and must not be exposed on a network or the
+public internet without a deliberate, authorized decision. `--host 0.0.0.0` is
+possible but prints a warning. Publishing to a public host (e.g. GitHub Pages)
+is **not recommended** and is left entirely to the operator. If no URL is set,
+the digest links to the local `file://` path instead.
 
 ## 15. Roadmap (next, in priority order)
 
@@ -350,7 +368,9 @@ secfedclaw_v2/
   ledger.py            operator calibration-label ledger
   model.py             numpy gradient-boosted review-priority model (advisory)
   train_model.py       train/cross-validate the model (ledger + synthetic bootstrap)
-  daily.py             scheduled daily run (lock, preflight→edgar→scan→backtest→dashboard)
+  daily.py             scheduled daily run (lock, preflight→edgar→scan→backtest→dashboard→digest)
+  notify.py            daily WATCH digest (Telegram, file fallback, dashboard deep-link)
+  serve.py             localhost static server to view/publish the dashboard
   deploy/              launchd plist + cron + schedule_install.sh
   features/            market, social (X/Reddit/StockTwits), coordination, official, temporal, edgar, security_class
   tests/               test_v2 (14) + edgar (6) + flatfiles (5) + social (5) + security_class (4) + social_import (6) + model (6) + daily (2)

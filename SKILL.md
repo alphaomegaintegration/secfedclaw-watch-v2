@@ -71,8 +71,11 @@ It does NOT produce trading signals, accusations, or findings above WATCH.
     `out/daily_run_summary.json`; install via launchd (`deploy/schedule_install.sh`)
     or cron (`deploy/secfedclaw.cron`). Independent of the legacy hermes cron.
 15. **Daily digest** (`notify.py`) — Telegram digest of flagged (≥MEDIUM)
-    tickers (token in .env); file fallback when unreachable. Review-priority
-    context only.
+    tickers (token in .env); file fallback when unreachable; deep-links to the
+    dashboard. Review-priority context only.
+16. **Dashboard serving** (`serve.py`) — localhost-bound static server for the
+    self-contained dashboard; set `SECFEDCLAW_DASHBOARD_URL` so the digest links
+    to it. Public exposure is an explicit operator choice (WATCH content).
 
 ## Commands
 

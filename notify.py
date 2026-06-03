@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import urllib.parse
 import urllib.request
@@ -28,7 +29,15 @@ OUT = Path(__file__).resolve().parent / "out"
 RANK = {"CRITICAL_REVIEW": 3, "HIGH": 2, "MEDIUM": 1, "LOW": 0}
 
 
-def compose_digest(queue: dict[str, Any], summary: dict[str, Any] | None = None) -> str:
+def dashboard_url(env: dict[str, str] | None = None) -> str:
+    """Resolve the dashboard link: SECFEDCLAW_DASHBOARD_URL env, else local file."""
+    env = env or {}
+    return (os.environ.get("SECFEDCLAW_DASHBOARD_URL") or env.get("SECFEDCLAW_DASHBOARD_URL")
+            or (OUT / "dashboard_v2.html").as_uri())
+
+
+def compose_digest(queue: dict[str, Any], summary: dict[str, Any] | None = None,
+                   url: str | None = None) -> str:
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     rows = [r for r in queue.get("review_queue", []) if "error" not in r]
     flagged = sorted([r for r in rows if RANK.get(r.get("review_priority"), 0) >= 1],
@@ -49,9 +58,11 @@ def compose_digest(queue: dict[str, Any], summary: dict[str, Any] | None = None)
                          f"{r.get('security_class', '?')} · {r.get('n_families_active', 0)} families")
     else:
         lines.append("No tickers reached MEDIUM today. (Routine context only.)")
-    lines += ["",
-              "WATCH-level review priorities only — not trading signals, not proof of misconduct.",
-              "Open the dashboard for evidence packages and methodology."]
+    lines += [""]
+    if url:
+        lines.append(f"Dashboard: {url}")
+    lines += ["WATCH-level review priorities only — not trading signals, not proof of misconduct.",
+              "Open the dashboard for evidence packages, agents, and methodology."]
     return "\n".join(lines)
 
 
@@ -74,7 +85,7 @@ def send_telegram(text: str, env: dict[str, str], timeout: int = 12) -> dict[str
 def deliver(queue: dict[str, Any], summary: dict[str, Any] | None = None,
             env: dict[str, str] | None = None) -> dict[str, Any]:
     env = env if env is not None else load_env(fed_claw_root())
-    text = compose_digest(queue, summary)
+    text = compose_digest(queue, summary, url=dashboard_url(env))
     result = send_telegram(text, env)
     if not result.get("sent"):
         OUT.mkdir(parents=True, exist_ok=True)
@@ -95,7 +106,7 @@ def main() -> int:
     queue = json.loads(Path(args.queue).read_text()) if Path(args.queue).exists() else {"review_queue": []}
     summary = json.loads(Path(args.summary).read_text()) if Path(args.summary).exists() else None
     if args.print:
-        print(compose_digest(queue, summary))
+        print(compose_digest(queue, summary, url=dashboard_url(load_env(fed_claw_root()))))
         return 0
     print(json.dumps(deliver(queue, summary), indent=2))
     return 0
