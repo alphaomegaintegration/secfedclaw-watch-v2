@@ -152,11 +152,35 @@ caps, coordination clusters, adversary caveats, benign review), and
 **Backtest / Calibration** (KPI cards, confusion matrix, calibration ledger,
 SEC case corpus). Run `python3 pipeline.py` to refresh all three from data.
 
-## 8. Roadmap (next, in priority order)
+## 8. EDGAR daily-diff pipeline (implemented — `edgar_pipeline.py`)
 
-1. **EDGAR daily-diff pipeline** (recursive `submissions.zip` + `companyfacts.zip`)
-   feeding issuer/insider/dilution features.
-2. **Polygon Flat Files** integration so the backtest runs on real multi-year
+Incremental SEC ingestion ("just the diffs"). It keeps a **state watermark**
+(`state/edgar_state.json`) of the last processed date + seen accession numbers,
+so each run only processes new filings — cron-friendly and recursive/adaptive.
+
+Flow: resolve ticker→CIK from `company_tickers.json` → for each new business day
+fetch the SEC **daily-index** master file → parse pump-relevant filings
+(insider 3/4/5/144, dilution S-1/S-3/424B/EFFECT/S-8, material 8-K, late NT,
+delisting 25/15-12B) → diff against seen accessions → recompute per-ticker
+issuer features → write `out/edgar/issuer_features_<TICKER>.json`.
+
+The scorer consumes these as a **concern-bearing `issuer_event`** signal (not
+mere reviewability): insiders/issuers selling or diluting into promoted demand
+is a classic pump tell, so `issuer_event` is a corroborating family and feeds
+`anomaly_evidence`. `features/edgar.py` holds the pure, tested logic.
+
+```bash
+python3 edgar_pipeline.py --tickers AAPL TSLA AMC GME   # daily incremental run
+python3 edgar_pipeline.py --max-days 5                  # advance up to 5 business days
+# cron (daily): 0 9 * * 1-5  cd .../secfedclaw_v2 && python3 edgar_pipeline.py
+```
+
+Live on a networked machine (uses `SEC_USER_AGENT`); offline it parses any
+cached daily-index and otherwise no-ops while preserving state.
+
+## 9. Roadmap (next, in priority order)
+
+1. **Polygon Flat Files** integration so the backtest runs on real multi-year
    per-ticker history for the SEC case windows.
 3. **Reddit OAuth** restore (cross-platform corroboration).
 4. Merge the v0.2 panel into the production dashboard + score-ready-ratio KPI.
@@ -176,7 +200,11 @@ secfedclaw_v2/
   scoring_v2.py        v0.2 composite engine
   agents.py            scout / analyst / adversary / packager + orchestrator
   scan.py              multi-ticker scan CLI (+ discovery)
-  features/            market, social, coordination, official, temporal
-  tests/test_v2.py     14 deterministic unit tests
-  out/                 generated packages + review_queue.json
+  backtest.py          calibration harness (precision/recall)
+  dashboard_v2.py      offline self-contained dashboard
+  pipeline.py          one-command scan -> backtest -> dashboard
+  edgar_pipeline.py    EDGAR daily-diff ingestion (state watermark, incremental)
+  features/            market, social, coordination, official, temporal, edgar
+  tests/               test_v2.py (14) + test_edgar.py (6)
+  out/                 generated packages, review_queue, backtest, dashboard, edgar/
 ```

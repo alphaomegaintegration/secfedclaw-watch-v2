@@ -211,3 +211,60 @@ class DataConnector:
 
     def reg_sho_threshold(self) -> Fetch:
         return self._replay("reg_sho_threshold", "*/nasdaq_reg_sho_*_sample.json")
+
+    # ---- EDGAR daily-diff pipeline sources ------------------------------
+    def sec_daily_index(self, day: str) -> Fetch:
+        """SEC daily-index master file (pipe-delimited) for a YYYY-MM-DD day."""
+        ua = self.env.get("SEC_USER_AGENT", "secfedclaw research robert.david.brown@gmail.com")
+        y, m, d = day.split("-")
+        q = (int(m) - 1) // 3 + 1
+        url = f"https://www.sec.gov/Archives/edgar/daily-index/{y}/QTR{q}/master.{y}{m}{d}.idx"
+        if self.live_available_sec(ua):
+            status, data = self._http_text(url, {"User-Agent": ua})
+            if status == 200 and data:
+                return Fetch(name=f"sec_daily_index_{day}", mode="live", status=status, data=data,
+                             source_url_redacted=url, note="SEC daily-index master.idx")
+        # replay: a cached daily index if the operator saved one
+        return self._replay(f"sec_daily_index_{day}", f"*daily_index*{y}{m}{d}*",
+                            "*sec_daily_index*", note="cached daily index (if present)")
+
+    def sec_company_tickers(self) -> Fetch:
+        ua = self.env.get("SEC_USER_AGENT", "secfedclaw research robert.david.brown@gmail.com")
+        if self.live_available_sec(ua):
+            status, data = self._http_json("https://www.sec.gov/files/company_tickers.json",
+                                           {"User-Agent": ua})
+            if status == 200 and data:
+                return Fetch(name="sec_company_tickers", mode="live", status=status, data=data)
+        return self._replay("sec_company_tickers", "*/sec_company_tickers.json", "*sec_company_tickers*")
+
+    def edgar_issuer_features(self, ticker: str) -> Fetch:
+        """Load issuer-event features produced by edgar_pipeline.py (if any)."""
+        path = Path(__file__).resolve().parent / "out" / "edgar" / f"issuer_features_{ticker.upper()}.json"
+        if not path.exists():
+            return Fetch(name=f"edgar_issuer_features_{ticker.upper()}", mode="unavailable",
+                         status=None, data=None, note="no EDGAR issuer features; run edgar_pipeline.py")
+        raw = path.read_bytes()
+        try:
+            data = json.loads(raw)
+        except Exception:
+            data = None
+        return Fetch(name=f"edgar_issuer_features_{ticker.upper()}", mode="replay", status=200,
+                     data=data, artifact_path=str(path), sha256=sha256_bytes(raw),
+                     note="EDGAR issuer-event features")
+
+    def live_available_sec(self, ua: str) -> bool:
+        """Lightweight SEC reachability probe, separate from Polygon."""
+        if not self.prefer_live:
+            return False
+        status, _ = self._http_text("https://www.sec.gov/files/company_tickers.json", {"User-Agent": ua})
+        return status == 200
+
+    def _http_text(self, url: str, headers: dict[str, str] | None = None) -> tuple[int | None, Any]:
+        try:
+            req = urllib.request.Request(url, headers=headers or {})
+            with urllib.request.urlopen(req, timeout=self.timeout) as r:
+                return r.status, r.read().decode("utf-8", "replace")
+        except urllib.error.HTTPError as e:
+            return e.code, None
+        except Exception:
+            return None, None

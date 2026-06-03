@@ -33,6 +33,7 @@ from features import social as soc  # noqa: E402
 from features import coordination as coord  # noqa: E402
 from features import official as off  # noqa: E402
 from features import temporal as temporal  # noqa: E402
+from features import edgar as edgar_feat  # noqa: E402
 
 def score_to_priority(score: float) -> str:
     if score >= 75:
@@ -103,6 +104,12 @@ def build_package(ticker: str, fetches: dict[str, Any]) -> dict[str, Any]:
     )
     off_scores = off.official_scores(ctx)
 
+    # ---- EDGAR issuer-event signal (concern-bearing) ----
+    edgar_fetch = fetches.get("edgar")
+    edgar_payload = edgar_fetch.data if (edgar_fetch and hasattr(edgar_fetch, "data")) else None
+    edgar_features = edgar_payload.get("features") if isinstance(edgar_payload, dict) else None
+    issuer_event_val, issuer_event_basis = edgar_feat.issuer_event_score(edgar_features or {})
+
     component_scores = {
         "social_issuer_specific_burst": social_scores["social_issuer_specific_burst"],
         "social_promotional_noise": social_scores["social_promotional_noise"],
@@ -111,6 +118,7 @@ def build_package(ticker: str, fetches: dict[str, Any]) -> dict[str, Any]:
         "issuer_context_score": off_scores["issuer_context_score"],
         "halt_regulatory_score": off_scores["halt_regulatory_score"],
         "coordination_score": round(coordination_score, 2),
+        "issuer_event_score": round(issuer_event_val, 2),
     }
 
     # ---- concern-bearing anomaly evidence (separate from reviewability) ----
@@ -118,10 +126,11 @@ def build_package(ticker: str, fetches: dict[str, Any]) -> dict[str, Any]:
     # families (weights sum to 1.0 so a single maxed family can still register
     # meaningful concern instead of being averaged toward zero).
     anomaly_evidence = round(min(
-        0.40 * component_scores["market_anomaly_score"] +
-        0.22 * component_scores["coordination_score"] +
-        0.18 * component_scores["market_structure_score"] +
-        0.12 * component_scores["halt_regulatory_score"] +
+        0.34 * component_scores["market_anomaly_score"] +
+        0.20 * component_scores["coordination_score"] +
+        0.14 * component_scores["market_structure_score"] +
+        0.14 * component_scores["issuer_event_score"] +
+        0.10 * component_scores["halt_regulatory_score"] +
         0.08 * component_scores["social_issuer_specific_burst"], 100), 2)
 
     # ---- corroboration ----
@@ -196,7 +205,14 @@ def build_package(ticker: str, fetches: dict[str, Any]) -> dict[str, Any]:
         "component_scores": {k: component_scores[k] for k in (
             "social_issuer_specific_burst", "social_promotional_noise",
             "market_anomaly_score", "market_structure_score",
-            "issuer_context_score", "halt_regulatory_score", "coordination_score")},
+            "issuer_context_score", "halt_regulatory_score", "coordination_score",
+            "issuer_event_score")},
+        "edgar_issuer_event": {
+            "score": component_scores["issuer_event_score"],
+            "basis": issuer_event_basis,
+            "asof": edgar_payload.get("asof") if isinstance(edgar_payload, dict) else None,
+            "source": edgar_fetch.name if (edgar_fetch and hasattr(edgar_fetch, "name")) else None,
+        },
         "score_caps_applied": caps,
         "benign_explanation_review": {**benign, "band_reduction_applied": benign_adjusted},
         "market_detail": {"time_series": ts, "cross_sectional": xs, "microstructure": micro,

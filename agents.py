@@ -62,6 +62,7 @@ class ScoutAgent:
             "reg_sho": c.reg_sho_threshold(),
             "halts": c.nasdaq_halts(),
             "submissions": c.sec_submissions(cik) if cik else type("F", (), {"data": None, "mode": "unavailable", "ok": lambda self: False})(),
+            "edgar": c.edgar_issuer_features(ticker),
         }
         # Reddit is gate-blocked in the current environment (403); mark explicitly.
         fetches["reddit_unavailable"] = True

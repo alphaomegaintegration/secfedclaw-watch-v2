@@ -43,10 +43,13 @@ It does NOT produce trading signals, accusations, or findings above WATCH.
    evidence, separated from reviewability (evidence quality).
 6. **Multi-ticker scan + discovery** — scores a universe and can discover the
    top cross-sectional movers from the grouped-daily snapshot.
+7. **EDGAR daily-diff pipeline** (`edgar_pipeline.py`) — incremental SEC
+   daily-index ingestion with a state watermark; extracts a concern-bearing
+   `issuer_event` signal (insider/dilution/delisting) that corroborates a move.
 
 ## Commands
 
-From `fed_claw/secfedclaw_v2/`:
+From the repo root:
 
 ```bash
 python3 tests/test_v2.py                          # unit tests (stdlib unittest)
@@ -54,6 +57,8 @@ python3 scan.py --tickers AAPL TSLA AMC GME       # explicit universe
 python3 scan.py --discover 15                     # default universe + top 15 movers
 python3 scan.py --no-live                          # force replay from custody artifacts
 python3 -c "from agents import Orchestrator; print(Orchestrator().run('AAPL'))"
+python3 edgar_pipeline.py --tickers AAPL TSLA AMC GME    # EDGAR daily-diff ingest
+python3 tests/test_edgar.py                              # EDGAR unit tests
 ```
 
 Outputs: per-ticker packages and a ranked `review_queue.json` under

@@ -35,6 +35,9 @@ def corroboration(component_scores: dict[str, float],
         families_active.append("halt")
     if component_scores.get("coordination_score", 0) >= 30:
         families_active.append("coordination")
+    # EDGAR issuer-event family: insiders/issuer selling or diluting into demand.
+    if component_scores.get("issuer_event_score", 0) >= 30:
+        families_active.append("issuer_event")
 
     n = len(families_active)
     # Corroboration multiplier applied to the concern-bearing anomaly-evidence
