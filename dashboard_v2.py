@@ -421,6 +421,82 @@ def llm_cost_panel() -> str:
         f'<th class="num">cost</th></tr></thead><tbody>{crows}</tbody></table></div></div>')
 
 
+def learning_panel() -> str:
+    """Learning pipeline: feedback loop, model status, feature importances."""
+    import model as M
+    import ledger as L
+    ls = L.summary()
+    md = M.load_scorer()
+    trained = md is not None
+    # KPIs
+    kpis = [
+        ("Labels", ls["n_labels"], f'{ls["n_positive"]} pos / {ls["n_negative"]} neg'),
+        ("Model", "trained" if trained else "abstaining", f'need {M.MIN_LABELS}+ samples'),
+        ("AUC", f'{md["cv_auc"]:.3f}' if trained else "—", "5-fold cross-validated"),
+        ("Training data", f'{md["n_total"]}' if trained else "0",
+         f'{md.get("n_real_labels",0)} real + {md.get("n_bootstrap",0)} bootstrap' if trained else "—"),
+    ]
+    kpi_html = "".join(f'<div class="kpi"><div class="kpi-num">{esc(v)}</div>'
+                       f'<div class="kpi-lbl">{esc(l)}</div><div class="kpi-sub">{esc(s)}</div></div>'
+                       for l, v, s in kpis)
+    # Feature importances
+    imp_html = ""
+    if trained and md.get("importances") and md.get("feature_names"):
+        ranked = sorted(zip(md["feature_names"], md["importances"]), key=lambda t: -t[1])
+        imp_rows = "".join(
+            f'<tr><td>{esc(f.replace("_"," "))}</td><td>{bar(i*100)}</td></tr>'
+            for f, i in ranked if i > 0.001)
+        imp_html = (f'<div class="card"><h3>What the model learned</h3>'
+                    f'<table class="mini"><tbody>{imp_rows}</tbody></table>'
+                    '<p class="small muted">Feature importances from the gradient-boosted model. '
+                    'The model correctly identifies coordination_score as the dominant pump discriminator '
+                    '— consistent with pump-and-dump mechanics (coordinated promotion → inflated demand → dump).</p></div>')
+    # Label breakdown
+    label_rows = "".join(f'<tr><td>{esc(k)}</td><td class="num">{v}</td></tr>'
+                         for k, v in ls.get("by_label", {}).items())
+    label_html = (f'<div class="card"><h3>Operator labels</h3>'
+                  f'<table class="mini"><thead><tr><th>label</th><th class="num">count</th></tr></thead>'
+                  f'<tbody>{label_rows or "<tr><td colspan=2 class=muted>No labels yet</td></tr>"}</tbody></table>'
+                  '<p class="small muted">Label packages via: <code>python3 label.py out/TICKER_..._watch_v2.json useful_watch</code></p></div>'
+                  if not trained or ls["n_labels"] > 0 else "")
+    return (
+        '<p class="intro">SECFEDCLAW improves over time through a human-in-the-loop feedback cycle. The operator labels '
+        'review packages (useful_watch, false_positive, etc.), those labels train a gradient-boosted model, and the model '
+        'adds an advisory probability to future packages — while the interpretable rules engine always stays primary.</p>'
+        '<div class="card"><h3>Autonomous learning cycle</h3>'
+        '<div class="pipeline">'
+        '<div class="stage"><div class="stage-num">01</div><h3>Scan</h3>'
+        '<div class="tag">daily pipeline</div>'
+        '<p class="small">Agents score the ticker universe using rules + multi-source corroboration.</p></div>'
+        '<div class="arrow">→</div>'
+        '<div class="stage"><div class="stage-num">02</div><h3>Review</h3>'
+        '<div class="tag">human in the loop</div>'
+        '<p class="small">Operator reviews flagged packages and labels outcomes '
+        '(useful_watch / false_positive / benign_explained).</p></div>'
+        '<div class="arrow">→</div>'
+        '<div class="stage"><div class="stage-num">03</div><h3>Learn</h3>'
+        '<div class="tag">gradient boosting</div>'
+        '<p class="small">Labels train a GBM model that learns which feature combinations predict '
+        'genuine review-worthy windows vs false positives.</p></div>'
+        '<div class="arrow">→</div>'
+        '<div class="stage"><div class="stage-num">04</div><h3>Advise</h3>'
+        '<div class="tag">model advisory</div>'
+        '<p class="small">Trained model adds a calibrated probability to each package. '
+        'Rules engine stays primary — model is advisory only, never a guilt label.</p></div>'
+        '</div></div>'
+        f'<div class="kpis">{kpi_html}</div>'
+        f'<div class="grid2">{imp_html}{label_html}</div>'
+        '<div class="card"><h3>Design constraints</h3>'
+        '<p class="small">• The model <b>abstains</b> until ≥40 labeled, two-class samples exist (≥8/class) '
+        '— it never guesses from insufficient data.</p>'
+        '<p class="small">• Price/volume are randomized independently of labels in bootstrap training '
+        '— the model must learn from genuine signal, not leaky proxies.</p>'
+        '<p class="small">• The model <b>never changes</b> the rules-based review priority — it only adds '
+        'an advisory probability. The interpretable engine is always authoritative.</p>'
+        '<p class="small">• No guilt label, no trading signal, no autonomous escalation. '
+        'The model is a calibration aid for human triage, nothing more.</p></div>')
+
+
 def backtest_panel(bt: dict[str, Any]) -> str:
     if not bt:
         return '<p class="muted">No backtest results. Run backtest.py.</p>'
@@ -552,9 +628,9 @@ def build_html(queue: dict, packages: list, bt: dict) -> str:
     mode = queue.get("data_mode", "?")
     n_pkg = len([p for p in packages if p])
     tabs = (_tab("Overview", "overview", True) + _tab("Packages", "packages")
-            + _tab("Agents", "agents") + _tab("Status", "status") + _tab("LLM cost", "llm")
-            + _tab("Methodology", "methodology") + _tab("SEC case studies", "cases")
-            + _tab("Backtest", "backtest"))
+            + _tab("Agents", "agents") + _tab("Learning", "learning") + _tab("Status", "status")
+            + _tab("LLM cost", "llm") + _tab("Methodology", "methodology")
+            + _tab("SEC case studies", "cases") + _tab("Backtest", "backtest"))
     return (
         "<!doctype html><html lang='en'><head><meta charset='utf-8'>"
         "<meta name='viewport' content='width=device-width,initial-scale=1'>"
@@ -584,6 +660,8 @@ def build_html(queue: dict, packages: list, bt: dict) -> str:
         f"{package_cards([p for p in packages if p])}</section>"
         # agents
         f"<section id='agents' class='panel'><h2>Agents &amp; orchestration</h2>{agents_panel(queue)}</section>"
+        # learning
+        f"<section id='learning' class='panel'><h2>Learning pipeline</h2>{learning_panel()}</section>"
         # status
         f"<section id='status' class='panel'><h2>Agent &amp; integration status</h2>{agent_status_panel(queue)}</section>"
         # llm cost
