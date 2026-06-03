@@ -302,18 +302,19 @@ a guilt/fraud label.
 
 ### Training data
 
-**43 real labels** from 7 SEC enforcement cases + 6 matched controls, plus 180
-bootstrap samples (price/volume randomized independently of label to prevent
+**64 real labels** from 8 SEC/DOJ enforcement cases + 6 matched controls, plus
+180 bootstrap samples (price/volume randomized independently of label to prevent
 class leakage):
 
-| Case | Ticker | Windows | Source |
-|---|---|---|---|
-| CLEU ramp-and-dump | CLEU | 3 | DOJ N.D. Ill. 1:25-cr-00161 |
-| Atlas Trading influencers | GTTN, SURF, UPC | 3 | SEC 2022-221 |
-| SafeMoon crypto | SFM | 1 | SEC 2023 |
-| Wintercap/OneLife | ONEI | 1 | SEC enforcement 2024 |
-| Ostin Technology | OST | 3 | DOJ E.D. Va. 1:25-cr-00259 |
-| Matched controls | MSFT, AAPL, TSLA, GOOG | 6 | — |
+| Case | Type | Ticker | Windows | Source |
+|---|---|---|---|---|
+| CLEU ramp-and-dump | Pump | CLEU | 3 | DOJ N.D. Ill. 1:25-cr-00161 |
+| Atlas Trading influencers | Pump | GTTN, SURF, UPC | 3 | SEC 2022-221 |
+| SafeMoon crypto | Pump | SFM | 1 | SEC 2023 |
+| Wintercap/OneLife | Pump | ONEI | 1 | SEC enforcement 2024 |
+| Ostin Technology | Pump | OST | 3 | DOJ E.D. Va. 1:25-cr-00259 |
+| Citron Research / Andrew Left | Short-and-distort | ROKU, NVDA, CRON, XL | 4 | DOJ 2:24-cr-456 (convicted Jun 2026) |
+| Matched controls | — | MSFT, AAPL, TSLA, GOOG | 6 | — |
 
 `label_cases.py` runs each case through the full 5-agent pipeline (all live
 sources) and labels in the ledger. `historical.py --cases-file cases.json`
@@ -323,24 +324,26 @@ replays market-only windows via flat files.
 
 | Metric | Value |
 |---|---|
-| 5-fold CV AUC | **0.984** |
-| Real-label AUC | **0.736** |
-| Real-label accuracy | **0.81** (TP=17, FP=0, TN=18, FN=8) |
-| False positives | **0** — no control ever misclassified as pump |
+| 5-fold CV AUC | **0.982** |
+| Real-label accuracy | **0.81** (zero false positives) |
+| Real labels | **64** (40 manipulation, 24 control) |
+| False positives | **0** — no control ever misclassified |
 
 ### Learned feature importances
 
 | Feature | Importance | What it captures |
 |---|---|---|
-| `coordination_score` | **49%** | Near-duplicate clusters, burst sync, shared domains |
-| `class_ordinal` | 34% | Liquidity class (microcaps are pump targets) |
-| `social_promotional_noise` | 11% | Promotional language volume |
-| `social_issuer_specific_burst` | 6% | Ticker-specific social activity |
+| `coordination_score` | **43%** | Near-duplicate clusters, burst sync, shared domains |
+| `class_ordinal` | 23% | Liquidity class (microcaps are pump targets) |
+| `social_promotional_noise` | 17% | Promotional language volume |
+| `market_anomaly_score` | 17% | Price+volume abnormality |
 
-The model correctly identifies coordination as the dominant pump discriminator
-and is learning that promotional noise matters (11%, up from 0% before the OST
-case was added). The 8 false negatives are market-only flat-file windows where
-coordination/social data is unavailable — expected behavior.
+The model correctly identifies coordination as the dominant discriminator.
+Notably, `market_anomaly_score` gained 17% importance (was 0%) after adding
+the Citron/Left cases — because large-cap tickers (ROKU, NVDA) show measurable
+market moves from influential tweets. The Citron case also teaches the model
+that manipulation works in **both directions** (short-and-distort, not just
+pump-and-dump).
 
 ### Components
 
