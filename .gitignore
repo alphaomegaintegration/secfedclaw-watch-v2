@@ -38,3 +38,6 @@ Thumbs.db
 
 # probe/scratch
 __probe*
+
+# flat-file cache
+flatfiles/

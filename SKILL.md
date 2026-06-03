@@ -46,6 +46,10 @@ It does NOT produce trading signals, accusations, or findings above WATCH.
 7. **EDGAR daily-diff pipeline** (`edgar_pipeline.py`) — incremental SEC
    daily-index ingestion with a state watermark; extracts a concern-bearing
    `issuer_event` signal (insider/dilution/delisting) that corroborates a move.
+8. **Polygon Flat Files historical replay** (`flatfiles.py`, `historical.py`) —
+   stdlib-SigV4 S3 access to day-aggregate history (`MASSIVE_FLATFILES_*`) so
+   the backtest runs on real SEC-case windows; validates the market-anomaly
+   component (rolling + cross-sectional, double-confirmation) on real data.
 
 ## Commands
 
@@ -58,7 +62,9 @@ python3 scan.py --discover 15                     # default universe + top 15 mo
 python3 scan.py --no-live                          # force replay from custody artifacts
 python3 -c "from agents import Orchestrator; print(Orchestrator().run('AAPL'))"
 python3 edgar_pipeline.py --tickers AAPL TSLA AMC GME    # EDGAR daily-diff ingest
+python3 historical.py --case TKR:2021-09-13:pump         # real Flat Files replay
 python3 tests/test_edgar.py                              # EDGAR unit tests
+python3 tests/test_flatfiles.py                          # Flat Files unit tests
 ```
 
 Outputs: per-ticker packages and a ranked `review_queue.json` under

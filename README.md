@@ -178,11 +178,33 @@ python3 edgar_pipeline.py --max-days 5                  # advance up to 5 busine
 Live on a networked machine (uses `SEC_USER_AGENT`); offline it parses any
 cached daily-index and otherwise no-ops while preserving state.
 
-## 9. Roadmap (next, in priority order)
+## 9. Polygon Flat Files historical replay (implemented — `flatfiles.py`, `historical.py`)
 
-1. **Polygon Flat Files** integration so the backtest runs on real multi-year
-   per-ticker history for the SEC case windows.
-3. **Reddit OAuth** restore (cross-platform corroboration).
+S3-compatible access to historical daily-aggregate flat files via stdlib AWS
+SigV4 (no boto3) using the `MASSIVE_FLATFILES_*` credentials, so the backtest
+can run on **real multi-year per-ticker history** for SEC-case windows instead
+of synthetic data. Raw downloads are cached + hashed under `flatfiles/day_aggs/`.
+
+`flatfiles.py` lists/gets day-aggregate files and assembles real `daily_range`
+(per-ticker bars) + `grouped` (event-day cross-section) inputs for the scorer.
+`historical.py` replays labeled case/control windows through the v0.2 market
+engine and reports pump-vs-control separation.
+
+```bash
+python3 historical.py --case PUMPX:2021-09-13:pump --case MSFT:2021-09-13:control
+python3 historical.py --cases-file cases.json --lookback 70
+```
+
+Flat files are market-only, so this validates the **MARKET-anomaly component**
+(rolling 20/60d + cross-sectional, price+volume double-confirmation) on real
+windows; full corroboration still uses the live scan. Validated on real-shaped
+data: a +75% / 28×-volume pump day scored market-anomaly ~99 (double-confirmed)
+vs a benign control ~44 — ~55-pt separation. Live needs `MASSIVE_FLATFILES_*` +
+network; offline replays cached day-aggs.
+
+## 10. Roadmap (next, in priority order)
+
+1. **Reddit OAuth** restore (cross-platform corroboration).
 4. Merge the v0.2 panel into the production dashboard + score-ready-ratio KPI.
 5. Per-security-class calibrated thresholds (OTC / microcap / small / large).
 6. Optional gradient-boosted review-priority model once the labeled corpus
@@ -204,7 +226,10 @@ secfedclaw_v2/
   dashboard_v2.py      offline self-contained dashboard
   pipeline.py          one-command scan -> backtest -> dashboard
   edgar_pipeline.py    EDGAR daily-diff ingestion (state watermark, incremental)
+  flatfiles.py         Polygon/Massive Flat Files client (stdlib SigV4, day-aggs)
+  historical.py        real-data case/control replay through the v0.2 engine
   features/            market, social, coordination, official, temporal, edgar
-  tests/               test_v2.py (14) + test_edgar.py (6)
+  tests/               test_v2.py (14) + test_edgar.py (6) + test_flatfiles.py (5)
   out/                 generated packages, review_queue, backtest, dashboard, edgar/
+  flatfiles/day_aggs/  cached + hashed historical day-aggregate flat files
 ```
