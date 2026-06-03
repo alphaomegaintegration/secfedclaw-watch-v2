@@ -7,7 +7,9 @@
 set -euo pipefail
 
 DIR="$(cd "$(dirname "$0")/.." && pwd)"          # repo root (parent of deploy/)
-PY="$(command -v python3)"
+# Resolve the real python binary, not a pyenv/asdf shim (shims need shell init
+# that launchd does not provide).
+PY="$(python3 -c 'import sys; print(sys.executable)')"
 LABEL="com.alphaomega.secfedclaw.daily"
 PLIST_SRC="$DIR/deploy/$LABEL.plist"
 PLIST_DST="$HOME/Library/LaunchAgents/$LABEL.plist"

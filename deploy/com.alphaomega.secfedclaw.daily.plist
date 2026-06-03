@@ -17,6 +17,12 @@
     <key>WorkingDirectory</key>
     <string>__DIR__</string>
 
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    </dict>
+
     <key>StartCalendarInterval</key>
     <array>
         <dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>16</integer><key>Minute</key><integer>35</integer></dict>
