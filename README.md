@@ -146,15 +146,28 @@ should — which lifted precision from 0.65 to 0.71 with no recall loss.
 
 ## 7. Dashboard (implemented — `dashboard_v2.py`)
 
-Self-contained offline HTML (inline CSS/JS, **no external callbacks**, same
-constraint as the production dashboard) → `out/dashboard_v2.html`. Three tabs:
-ranked **Review Queue** (priority-filterable, with a **liquidity-class** column),
-**Packages** (component bars, caps, coordination clusters, adversary caveats,
-benign review), and **Backtest / Calibration** (confusion matrix, ledger, SEC
-case corpus). The Review Queue now leads with operator **KPI cards** — universe
-size, **score-ready %**, flagged ≥MEDIUM, CRITICAL/HIGH counts, mean
-anomaly-evidence, data mode — plus a **source-health panel** aggregating
-live/replay/ok across scanned tickers. Run `python3 pipeline.py` to refresh.
+Self-contained offline HTML (inline CSS/JS, **no auto-loaded external resources
+or callbacks**) → `out/dashboard_v2.html`, built on a small consistent design
+system (color/space/type tokens, accessible contrast). Six tabs:
+
+- **Overview** — operator KPI cards (universe, **score-ready %**, flagged
+  ≥MEDIUM, CRITICAL/HIGH, mean anomaly-evidence, mode) + the ranked, filterable
+  review queue. Every metric has an **ⓘ tooltip**, and each ticker carries
+  **reference links** (SEC EDGAR, EDGAR full-text, market, StockTwits) that open
+  externally on click.
+- **Packages** — evidence cards with component bars, families, caps,
+  coordination clusters, the model advisory, and a non-accusatory rationale.
+- **Agents** — the four-agent **orchestration** (Scout→Analyst→Adversary→
+  Packager): the data feeds each pulls, the data-engineering + algorithms it
+  applies, and its output, plus the live/replay data-feed health table.
+- **Methodology** — review-priority bands + a full **data dictionary** of every
+  metric, and an explicit "what it does NOT do".
+- **SEC case studies** — public SEC matters mapped to *which thresholds fire and
+  why* (for reviewers and for building labeled training windows), plus a worked
+  threshold-hit example.
+- **Backtest** — precision/recall, confusion matrix, calibration ledger.
+
+Run `python3 pipeline.py` (or `dashboard_v2.py`) to refresh.
 
 ## 8. EDGAR daily-diff pipeline (implemented — `edgar_pipeline.py`)
 
