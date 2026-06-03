@@ -57,15 +57,16 @@ class ScoutAgent:
             "trades": c.polygon_trades(ticker),
             "quotes": c.polygon_quotes(ticker),
             "x": c.x_recent(ticker),
-            "reddit": type("F", (), {"data": None, "mode": "unavailable", "ok": lambda self: False})(),
+            "reddit": c.reddit_oauth(ticker),
+            "stocktwits": c.stocktwits(ticker),
             "otc_threshold": c.finra_otc_threshold(),
             "reg_sho": c.reg_sho_threshold(),
             "halts": c.nasdaq_halts(),
             "submissions": c.sec_submissions(cik) if cik else type("F", (), {"data": None, "mode": "unavailable", "ok": lambda self: False})(),
             "edgar": c.edgar_issuer_features(ticker),
         }
-        # Reddit is gate-blocked in the current environment (403); mark explicitly.
-        fetches["reddit_unavailable"] = True
+        # Reddit availability depends on OAuth creds + reachability; reflect it.
+        fetches["reddit_unavailable"] = not fetches["reddit"].ok()
         health = {k: {"mode": getattr(v, "mode", "n/a"), "status": getattr(v, "status", None),
                       "ok": v.ok() if hasattr(v, "ok") else False}
                   for k, v in fetches.items() if hasattr(v, "mode")}

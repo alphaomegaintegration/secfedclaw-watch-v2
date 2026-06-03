@@ -50,6 +50,10 @@ It does NOT produce trading signals, accusations, or findings above WATCH.
    stdlib-SigV4 S3 access to day-aggregate history (`MASSIVE_FLATFILES_*`) so
    the backtest runs on real SEC-case windows; validates the market-anomaly
    component (rolling + cross-sectional, double-confirmation) on real data.
+9. **Multi-platform social** (X + Reddit OAuth + StockTwits) — normalized into
+   one schema; adds sentiment (Bullish/Bearish), cross-platform corroboration,
+   and a unanimous-bullish+promo coordination nudge. Reddit needs
+   `REDDIT_CLIENT_ID`/`REDDIT_CLIENT_SECRET`; StockTwits is public.
 
 ## Commands
 

@@ -28,7 +28,8 @@ PROMO_TERMS = {
 _CASHTAG_RE = re.compile(r"\$[A-Za-z]{1,6}\b")
 
 
-def normalize_posts(x_fetch_data: Any, reddit_fetch_data: Any = None) -> list[dict[str, Any]]:
+def normalize_posts(x_fetch_data: Any, reddit_fetch_data: Any = None,
+                    stocktwits_fetch_data: Any = None) -> list[dict[str, Any]]:
     posts: list[dict[str, Any]] = []
     if isinstance(x_fetch_data, dict):
         for t in (x_fetch_data.get("data") or []):
@@ -41,8 +42,25 @@ def normalize_posts(x_fetch_data: Any, reddit_fetch_data: Any = None) -> list[di
                 "text": t.get("text") or "",
                 "created_at": t.get("created_at"),
                 "author_id": t.get("author_id"),
+                "sentiment": None,
                 "engagement": sum(float(pm.get(k) or 0) for k in
                                   ("retweet_count", "reply_count", "like_count", "quote_count")),
+            })
+    if isinstance(stocktwits_fetch_data, dict):
+        for m in (stocktwits_fetch_data.get("messages") or []):
+            if not isinstance(m, dict):
+                continue
+            ent = (m.get("entities") or {}).get("sentiment") or {}
+            basic = (ent.get("basic") or "").lower() if isinstance(ent, dict) else ""
+            user = m.get("user") or {}
+            posts.append({
+                "platform": "stocktwits",
+                "id": str(m.get("id")),
+                "text": m.get("body") or "",
+                "created_at": m.get("created_at"),
+                "author_id": str(user.get("id") or user.get("username") or ""),
+                "sentiment": basic if basic in ("bullish", "bearish") else None,
+                "engagement": float((m.get("likes") or {}).get("total", 0)) if isinstance(m.get("likes"), dict) else 0.0,
             })
     if isinstance(reddit_fetch_data, dict):
         children = (((reddit_fetch_data.get("data") or {}).get("children")) or []) \
@@ -88,21 +106,31 @@ def social_features(posts: list[dict[str, Any]], ticker: str, reddit_unavailable
     promo_hits = 0
     engagement = 0.0
     platforms = set()
+    issuer_platforms: set[str] = set()
+    platform_counts: dict[str, int] = {}
+    bullish = bearish = 0
     for p in posts:
         text = p.get("text", "")
-        platforms.add(p["platform"])
+        plat = p["platform"]
+        platforms.add(plat)
+        platform_counts[plat] = platform_counts.get(plat, 0) + 1
         engagement += p.get("engagement", 0.0)
+        if p.get("sentiment") == "bullish":
+            bullish += 1
+        elif p.get("sentiment") == "bearish":
+            bearish += 1
         lower = text.lower()
         hits = sum(1 for term in PROMO_TERMS if term in lower)
         cashtags = {c.upper() for c in _CASHTAG_RE.findall(text)}
         promo_hits += hits
         if hits >= 1 or len(cashtags) > 3:
             promo_noise.append(p)
-        elif _is_issuer_specific(text, ticker):
-            issuer_specific.append(p)
         else:
-            # mentions ticker loosely, no promo: weak issuer-specific
+            # mentions ticker (loosely or via cashtag), no promo signature
             issuer_specific.append(p)
+            issuer_platforms.add(plat)
+    sentiment_total = bullish + bearish
+    bullish_ratio = round(bullish / sentiment_total, 3) if sentiment_total else None
     return {
         "n_posts": len(posts),
         "n_issuer_specific": len(issuer_specific),
@@ -110,6 +138,11 @@ def social_features(posts: list[dict[str, Any]], ticker: str, reddit_unavailable
         "promo_term_hits": promo_hits,
         "engagement_total": round(engagement, 1),
         "platforms": sorted(platforms),
+        "n_platforms": len(platforms),
+        "platform_counts": platform_counts,
+        "cross_platform_issuer_specific": len(issuer_platforms) >= 2,
+        "sentiment": {"bullish": bullish, "bearish": bearish, "bullish_ratio": bullish_ratio,
+                      "unanimous_bullish": bool(sentiment_total >= 5 and bullish_ratio and bullish_ratio >= 0.9)},
         "duplicates_removed": posts[0].get("_duplicates_removed", 0) if posts else 0,
         "reddit_state": "platform_unavailable" if reddit_unavailable else (
             "platform_present" if "reddit" in platforms else "platform_silent"),

@@ -43,9 +43,10 @@ agents flagged — and that this prototype addresses:
 ## 2. Data sources — current vs recommended
 
 **Currently wired (and good):** Polygon (aggregates, grouped daily, snapshot,
-trades, quotes), X recent search, SEC EDGAR (submissions, companyfacts,
-companyconcept, FTD), FINRA (OTC threshold, Reg SHO daily, short interest),
-Nasdaq (Reg SHO threshold, trade-halts RSS). Reddit public JSON is 403-blocked.
+trades, quotes) + **Flat Files** history, X recent search, **Reddit OAuth**,
+**StockTwits** (sentiment), SEC EDGAR (submissions, companyfacts, FTD) +
+**daily-diff pipeline**, FINRA (OTC threshold, Reg SHO daily, short interest),
+Nasdaq (Reg SHO threshold, trade-halts RSS).
 
 **Recommended additions (by leverage):**
 
@@ -57,8 +58,9 @@ Nasdaq (Reg SHO threshold, trade-halts RSS). Reddit public JSON is 403-blocked.
    insider-sale and S-1/S-3/424B dilution context as first-class features.
 3. **SEC full-text search (EFTS)** and **litigation/admin-proceeding feeds** —
    promoter/issuer enforcement history (design doc family E).
-4. **Reddit via authenticated API** (OAuth, ToS-compliant) — restores
-   cross-platform social corroboration (currently blocked).
+4. **Discord / Telegram promotion channels** — high-value but require explicit
+   authorization + ToS/legal review (SOUL: private channels need lawful access);
+   left as an explicit evidence gap, not autonomously collected.
 5. **Promotion sources** (newsletters/stock-promo disclosures, public/ToS-OK)
    — design doc Use-Case 3; `FIRECRAWL_API_KEY` is present for bounded fetches.
 6. **Options flow / OPRA** (Polygon entitlement) — unusual options pre-pump.
@@ -202,9 +204,30 @@ data: a +75% / 28×-volume pump day scored market-anomaly ~99 (double-confirmed)
 vs a benign control ~44 — ~55-pt separation. Live needs `MASSIVE_FLATFILES_*` +
 network; offline replays cached day-aggs.
 
-## 10. Roadmap (next, in priority order)
+## 10. Multi-platform social signals (implemented — `connectors.py`, `features/social.py`)
 
-1. **Reddit OAuth** restore (cross-platform corroboration).
+Social coverage is now **three platforms**, all normalized into one post schema
+so the coordination graph + social split + dedup work cross-platform:
+
+- **X** recent search (cashtag) — existing.
+- **Reddit OAuth** — authenticated app-only (`client_credentials`) search across
+  finance subreddits (pennystocks, wallstreetbets, Shortsqueeze, …). Replaces the
+  403-blocked public-JSON path; needs `REDDIT_CLIENT_ID`/`REDDIT_CLIENT_SECRET`/
+  `REDDIT_USER_AGENT`.
+- **StockTwits** — symbol stream with native **Bullish/Bearish sentiment** tags
+  (public, rate-limited). Finance-native and cashtag-first.
+
+New signals: per-platform counts, **cross-platform issuer-specific** corroboration,
+and **sentiment skew** — *unanimous bullish sentiment + promotional language* is a
+recognized hype/coordination tell and nudges the coordination score (capped,
+explained). Posts from all platforms feed the same near-duplicate / shared-domain /
+burst-sync coordination graph, so coordinated promo spanning platforms surfaces
+naturally. Validated: a 3-platform coordinated pump (8-post duplicate cluster,
+unanimous bullish) scored coordination 72 and reached MEDIUM.
+
+## 11. Roadmap (next, in priority order)
+
+1. **Discord/Telegram** promotion-channel ingestion (requires lawful authorization).
 4. Merge the v0.2 panel into the production dashboard + score-ready-ratio KPI.
 5. Per-security-class calibrated thresholds (OTC / microcap / small / large).
 6. Optional gradient-boosted review-priority model once the labeled corpus
@@ -228,8 +251,8 @@ secfedclaw_v2/
   edgar_pipeline.py    EDGAR daily-diff ingestion (state watermark, incremental)
   flatfiles.py         Polygon/Massive Flat Files client (stdlib SigV4, day-aggs)
   historical.py        real-data case/control replay through the v0.2 engine
-  features/            market, social, coordination, official, temporal, edgar
-  tests/               test_v2.py (14) + test_edgar.py (6) + test_flatfiles.py (5)
+  features/            market, social (X/Reddit/StockTwits), coordination, official, temporal, edgar
+  tests/               test_v2 (14) + test_edgar (6) + test_flatfiles (5) + test_social (5)
   out/                 generated packages, review_queue, backtest, dashboard, edgar/
   flatfiles/day_aggs/  cached + hashed historical day-aggregate flat files
 ```

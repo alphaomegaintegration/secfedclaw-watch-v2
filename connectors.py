@@ -193,6 +193,61 @@ class DataConnector:
                                  source_url_redacted=redact(url))
         return self._replay(f"x_recent_{ticker}", f"*/x_recent_search_{ticker}.json", f"*x_recent_search*{ticker.lower()}*.json")
 
+    def reddit_oauth(self, ticker: str, subreddits: list[str] | None = None) -> Fetch:
+        """Reddit via authenticated OAuth (app-only client_credentials grant).
+
+        Public JSON (old.reddit) is 403-blocked; this uses the official OAuth
+        API. Requires REDDIT_CLIENT_ID/REDDIT_CLIENT_SECRET/REDDIT_USER_AGENT.
+        Searches finance subreddits for the ticker; returns Reddit listing JSON.
+        """
+        ticker = ticker.upper()
+        subs = "+".join(subreddits or ["pennystocks", "stocks", "wallstreetbets",
+                                        "Shortsqueeze", "smallstreetbets", "RobinHoodPennyStocks"])
+        cid = self.env.get("REDDIT_CLIENT_ID")
+        csec = self.env.get("REDDIT_CLIENT_SECRET")
+        ua = self.env.get("REDDIT_USER_AGENT", "secfedclaw-watch/2.0 by u/secfedclaw")
+        if self.prefer_live and cid and csec:
+            token = self._reddit_token(cid, csec, ua)
+            if token:
+                url = (f"https://oauth.reddit.com/r/{subs}/search?q=%24{ticker}%20OR%20{ticker}"
+                       f"&restrict_sr=on&sort=new&limit=50&t=week")
+                status, data = self._http_json(url, {"Authorization": f"bearer {token}", "User-Agent": ua})
+                if status == 200 and data:
+                    return Fetch(name=f"reddit_{ticker}", mode="live", status=status, data=data,
+                                 source_url_redacted=redact(url), note=f"reddit oauth search r/{subs}")
+        return self._replay(f"reddit_{ticker}", f"*/reddit_*{ticker}*.json", f"*reddit*{ticker.lower()}*.json",
+                            note="reddit unavailable; set REDDIT_CLIENT_ID/SECRET for live OAuth")
+
+    def _reddit_token(self, cid: str, csec: str, ua: str) -> str | None:
+        import base64
+        if getattr(self, "_reddit_tok", None):
+            return self._reddit_tok
+        try:
+            basic = base64.b64encode(f"{cid}:{csec}".encode()).decode()
+            body = b"grant_type=client_credentials"
+            req = urllib.request.Request("https://www.reddit.com/api/v1/access_token", data=body,
+                                         headers={"Authorization": f"Basic {basic}", "User-Agent": ua,
+                                                  "Content-Type": "application/x-www-form-urlencoded"})
+            with urllib.request.urlopen(req, timeout=self.timeout) as r:
+                tok = json.loads(r.read()).get("access_token")
+                self._reddit_tok = tok
+                return tok
+        except Exception:
+            return None
+
+    def stocktwits(self, ticker: str) -> Fetch:
+        """StockTwits symbol stream — cashtag-native messages with Bullish/Bearish
+        sentiment tags. Public read endpoint (rate-limited); no auth required."""
+        ticker = ticker.upper()
+        if self.prefer_live:
+            url = f"https://api.stocktwits.com/api/2/streams/symbol/{ticker}.json"
+            status, data = self._http_json(url, {"User-Agent": "secfedclaw-watch/2.0"})
+            if status == 200 and data:
+                return Fetch(name=f"stocktwits_{ticker}", mode="live", status=status, data=data,
+                             source_url_redacted=url, note="stocktwits symbol stream")
+        return self._replay(f"stocktwits_{ticker}", f"*/stocktwits_*{ticker}*.json", f"*stocktwits*{ticker.lower()}*.json",
+                            note="stocktwits unavailable offline")
+
     def sec_submissions(self, cik10: str) -> Fetch:
         if self.live_available():
             ua = self.env.get("SEC_USER_AGENT", "secfedclaw research")

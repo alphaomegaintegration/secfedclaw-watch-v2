@@ -86,6 +86,7 @@ def build_package(ticker: str, fetches: dict[str, Any]) -> dict[str, Any]:
     posts = soc.normalize_posts(
         fetches["x"].data if fetches.get("x") else None,
         fetches["reddit"].data if fetches.get("reddit") else None,
+        fetches["stocktwits"].data if fetches.get("stocktwits") else None,
     )
     social_feat = soc.social_features(posts, ticker, reddit_unavailable)
     social_scores = soc.social_scores(social_feat)
@@ -93,6 +94,12 @@ def build_package(ticker: str, fetches: dict[str, Any]) -> dict[str, Any]:
     # ---- coordination ----
     coord_feat = coord.coordination_features(posts)
     coordination_score, coord_basis = coord.coordination_score(coord_feat)
+    # Sentiment mania: unanimous-bullish StockTwits + promotional language is a
+    # recognized coordination/hype tell; nudge coordination (capped, explained).
+    if social_feat.get("sentiment", {}).get("unanimous_bullish") and social_feat["n_promotional_noise"] >= 2:
+        coordination_score = min(coordination_score + 12, 100.0)
+        coord_basis.append(
+            f"unanimous bullish sentiment ({social_feat['sentiment']['bullish_ratio']}) + promotional posts")
 
     # ---- official ----
     ctx = off.official_context(
