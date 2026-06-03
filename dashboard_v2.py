@@ -64,7 +64,8 @@ def load(path: Path, default: Any) -> Any:
 
 def info(key: str) -> str:
     d = DEFS.get(key, "")
-    return f'<span class="info" title="{esc(d)}" aria-label="{esc(d)}">ⓘ</span>' if d else ""
+    return (f'<span class="info" tabindex="0" aria-label="{esc(d)}">ⓘ'
+            f'<span class="tooltip">{esc(d)}</span></span>') if d else ""
 
 
 def pill(priority: str) -> str:
@@ -569,7 +570,10 @@ thead th{color:var(--muted);font-size:11.5px;text-transform:uppercase;letter-spa
 .pill{display:inline-block;padding:2px 10px;border-radius:99px;font-size:12px;font-weight:700}
 .pill.crit{background:#3d1417;color:#ff9ba0} .pill.high{background:#3a2c10;color:#f0c14b}
 .pill.med{background:#26340f;color:#cdee85} .pill.low{background:#1b2435;color:#9fb0cc}
-.info{display:inline-block;width:15px;height:15px;line-height:15px;text-align:center;border-radius:50%;background:var(--line-2);color:#cfe4ff;font-size:10px;cursor:help;margin-left:4px}
+.info{display:inline-block;width:17px;height:17px;line-height:17px;text-align:center;border-radius:50%;background:var(--brand);color:#fff;font-size:10px;font-weight:700;cursor:help;margin-left:4px;position:relative;vertical-align:middle}
+.info .tooltip{display:none;position:absolute;bottom:calc(100% + 8px);left:50%;transform:translateX(-50%);background:#1c2a3a;color:#e0e8f0;border:1px solid var(--brand);border-radius:8px;padding:10px 14px;font-size:13px;font-weight:400;line-height:1.45;width:320px;max-width:90vw;white-space:normal;text-align:left;z-index:100;box-shadow:0 4px 16px rgba(0,0,0,.5);pointer-events:none}
+.info .tooltip::after{content:'';position:absolute;top:100%;left:50%;transform:translateX(-50%);border:6px solid transparent;border-top-color:var(--brand)}
+.info:hover .tooltip,.info:focus .tooltip{display:block}
 .bar{position:relative;background:#0f1623;border:1px solid var(--line);border-radius:6px;height:18px;min-width:130px;overflow:hidden}
 .bar-fill{position:absolute;inset:0 auto 0 0;background:linear-gradient(90deg,#2f6f3f,#3fb950)}
 .bar-fill.anom{background:linear-gradient(90deg,#7a4a1f,#d29922)}
