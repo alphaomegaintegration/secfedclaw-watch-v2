@@ -27,12 +27,29 @@ from config import fed_claw_root  # noqa: E402
 from connectors import DataConnector  # noqa: E402
 import scoring_v2  # noqa: E402
 
-# Minimal CIK map for issuer-context lookups (extend as needed).
+# Minimal CIK map for issuer-context lookups; extended dynamically at runtime.
 CIK_MAP = {
     "AAPL": "0000320193", "TSLA": "0001318605", "AMC": "0001411579",
     "GME": "0001326380", "AMD": "0000002488", "NVDA": "0001045810",
     "ALB": "0000915913",
 }
+_CIK_LOADED = False
+
+
+def _load_cik_map(connector: DataConnector) -> None:
+    """Populate CIK_MAP dynamically from SEC company_tickers.json (no key needed)."""
+    global _CIK_LOADED
+    if _CIK_LOADED:
+        return
+    _CIK_LOADED = True
+    try:
+        f = connector.sec_company_tickers()
+        if f.ok() and isinstance(f.data, dict):
+            for v in f.data.values():
+                if isinstance(v, dict) and v.get("ticker") and v.get("cik_str"):
+                    CIK_MAP[v["ticker"].upper()] = str(v["cik_str"]).zfill(10)
+    except Exception:
+        pass
 
 PROHIBITIONS = [
     "no trading signals", "no market actions", "no external contact",
@@ -48,6 +65,7 @@ class ScoutAgent:
 
     def gather(self, ticker: str) -> dict[str, Any]:
         c = self.c
+        _load_cik_map(c)
         cik = CIK_MAP.get(ticker.upper())
         fetches = {
             "daily_range": c.polygon_daily_range(ticker),

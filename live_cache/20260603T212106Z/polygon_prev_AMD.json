@@ -1,0 +1,1 @@
+{"ticker": "AMD", "queryCount": 1, "resultsCount": 1, "adjusted": true, "results": [{"T": "AMD", "v": 24293121.0, "vw": 514.3716, "o": 506.3, "c": 521.54, "h": 522.49, "l": 501.22, "t": 1780430400000, "n": 464995}], "status": "OK", "request_id": "fc50cc1d8b1aa9b4ebfb01833c0f1a69", "count": 1}

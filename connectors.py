@@ -267,8 +267,8 @@ class DataConnector:
                             note="stocktwits unavailable offline")
 
     def sec_submissions(self, cik10: str) -> Fetch:
-        if self.live_available():
-            ua = self.env.get("SEC_USER_AGENT", "secfedclaw research")
+        ua = self.env.get("SEC_USER_AGENT", "secfedclaw research robert.david.brown@gmail.com")
+        if self.prefer_live and self.live_available_sec(ua):
             url = f"https://data.sec.gov/submissions/CIK{cik10}.json"
             status, data = self._http_json(url, {"User-Agent": ua})
             if status == 200 and data:
@@ -276,22 +276,40 @@ class DataConnector:
         return self._replay(f"sec_submissions_{cik10}", "*/sec_aapl_submissions.json", "*sec_aapl_submissions*")
 
     def finra_otc_threshold(self) -> Fetch:
+        if self.prefer_live:
+            url = "https://api.finra.org/data/group/otcMarket/name/thresholdList"
+            status, data = self._http_json(url, {"User-Agent": "secfedclaw-watch/2.0", "Accept": "application/json"})
+            if status == 200 and data:
+                return self._live("finra_otc_threshold", status, data, url, note="FINRA OTC threshold list")
         return self._replay("finra_otc_threshold", "*/finra_otc_threshold_sample.json", "*/finra_data_otc_threshold.json")
 
     def nasdaq_halts(self) -> Fetch:
+        if self.prefer_live:
+            url = "https://www.nasdaqtrader.com/rss.aspx?feed=tradehalts"
+            status, data = self._http_text(url, {"User-Agent": "secfedclaw-watch/2.0"})
+            if status == 200 and data:
+                return self._live("nasdaq_halts", status, data, url, note="Nasdaq trade halts RSS")
         return self._replay("nasdaq_halts", "*/nasdaq_trade_halts_current_sample.json")
 
     def reg_sho_threshold(self) -> Fetch:
+        if self.prefer_live:
+            for url in ("https://www.nasdaqtrader.com/dynamic/symdir/regsho/nasdaqth.txt",
+                        "https://www.nasdaqtrader.com/dynamic/symdir/regsho/nyse_thrsholdlist.txt"):
+                status, data = self._http_text(url, {"User-Agent": "secfedclaw-watch/2.0"})
+                if status == 200 and data:
+                    return self._live("reg_sho_threshold", status, data, url, note="Nasdaq Reg SHO threshold list")
         return self._replay("reg_sho_threshold", "*/nasdaq_reg_sho_*_sample.json")
 
     def sec_litigation_releases(self) -> Fetch:
-        """SEC litigation-releases RSS feed (enforcement history). Live or replay."""
+        """SEC litigation + admin-proceeding feeds (enforcement history). No key needed."""
         ua = self.env.get("SEC_USER_AGENT", "secfedclaw research robert.david.brown@gmail.com")
-        url = "https://www.sec.gov/rss/litigation/litreleases.xml"
-        if self.live_available_sec(ua):
-            status, data = self._http_text(url, {"User-Agent": ua})
-            if status == 200 and data:
-                return self._live("sec_litigation_releases", status, data, url, note="SEC litigation RSS")
+        if self.prefer_live and self.live_available_sec(ua):
+            # litigation releases (correct URL — /litigation/ not /rss/litigation/)
+            for url in ("https://www.sec.gov/litigation/litreleases.xml",
+                        "https://www.sec.gov/rss/litigation/admin.xml"):
+                status, data = self._http_text(url, {"User-Agent": ua})
+                if status == 200 and data:
+                    return self._live("sec_litigation_releases", status, data, url, note="SEC enforcement feed")
         return self._replay("sec_litigation_releases", "*litigation*release*.xml", "*litreleases*",
                             note="enforcement feed unavailable offline")
 

@@ -1,0 +1,1 @@
+{"ticker": "GME", "queryCount": 1, "resultsCount": 1, "adjusted": true, "results": [{"T": "GME", "v": 6025012.0, "vw": 21.5902, "o": 21.14, "c": 20.92, "h": 21.24, "l": 20.885, "t": 1780430400000, "n": 55955}], "status": "OK", "request_id": "b127cca17b09d1c8069c1fb84db7996a", "count": 1}

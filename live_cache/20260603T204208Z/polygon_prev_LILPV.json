@@ -1,0 +1,1 @@
+{"ticker": "LILPV", "queryCount": 1, "resultsCount": 1, "adjusted": true, "results": [{"T": "LILPV", "v": 55318, "vw": 23.3316, "o": 14.28, "c": 28.5, "h": 28.5, "l": 14.28, "t": 1780430400000, "n": 1287}], "status": "OK", "request_id": "e17d1319d70e86546f2baec132c974d2", "count": 1}

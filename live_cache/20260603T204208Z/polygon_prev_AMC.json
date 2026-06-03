@@ -1,0 +1,1 @@
+{"ticker": "AMC", "queryCount": 1, "resultsCount": 1, "adjusted": true, "results": [{"T": "AMC", "v": 47271427.0, "vw": 2.0134, "o": 2.07, "c": 2.07, "h": 2.08, "l": 1.925, "t": 1780430400000, "n": 251360}], "status": "OK", "request_id": "2e25d2198abb44710d742696d2975b89", "count": 1}
