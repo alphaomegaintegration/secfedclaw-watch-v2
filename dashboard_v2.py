@@ -84,7 +84,7 @@ def ticker_links(t: str) -> str:
     refs = [
         (f"https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&ticker={t}&type=&dateb=&owner=include&count=40",
          "EDGAR", "SEC filings (3/4/8-K/S-1…)"),
-        (f"https://efts.sec.gov/LATEST/search-index?q=%22{t}%22", "FTS", "EDGAR full-text search"),
+        (f"https://www.nasdaq.com/market-activity/stocks/{t.lower()}", "Nasdaq", "Quote, halts, short interest"),
         (f"https://finance.yahoo.com/quote/{t}", "Market", "Price / volume / profile"),
         (f"https://stocktwits.com/symbol/{t}", "Social", "StockTwits stream"),
     ]

@@ -61,8 +61,18 @@ def main() -> int:
     ap.add_argument("--tickers", nargs="*", help="explicit ticker universe")
     ap.add_argument("--discover", type=int, default=0, help="add top-N cross-sectional movers")
     ap.add_argument("--no-live", action="store_true", help="force replay mode (skip live fetch)")
+    ap.add_argument("--live", action="store_true", help="run preflight then scan live (default is live-if-available)")
     ap.add_argument("--out", default=None, help="output dir for packages")
     args = ap.parse_args()
+
+    if args.live and not args.no_live:
+        import preflight
+        rep = preflight.run_preflight()
+        print(f"preflight verdict: {rep['verdict']} ({rep['sources_live']}/{rep['sources_total']} sources live)")
+        for r in rep["results"]:
+            print(f"  {r['source']:<12} {'live' if r['reachable'] else r['mode_if_run']}")
+        if rep["verdict"] == "REPLAY_ONLY":
+            print("No live sources reachable — proceeding in REPLAY mode.")
 
     connector = DataConnector(prefer_live=not args.no_live)
     live = connector.live_available()

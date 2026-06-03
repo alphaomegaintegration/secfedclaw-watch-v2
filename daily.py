@@ -105,8 +105,7 @@ def run(no_live: bool, tickers: list[str], discover: int) -> dict:
 
         # 3. scan (live or replay)
         scan = ["scan.py", "--tickers", *tickers, "--discover", str(discover)]
-        if not live:
-            scan += ["--no-live"]
+        scan += (["--live"] if live else ["--no-live"])
         summary["steps"]["scan"] = _run(scan, fh)
 
         # 4. backtest

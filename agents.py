@@ -126,6 +126,8 @@ class PackagerAgent:
     role = "packager"
 
     def __init__(self, out_dir: Path | None = None):
+        # Write next to this package's out/ — the same dir the dashboard reads.
+        # (Avoids a layout-dependent fed_claw_root()/secfedclaw_v2/out mismatch.)
         self.out_dir = out_dir or (Path(__file__).resolve().parent / "out")
 
     def write(self, package: dict[str, Any]) -> dict[str, Any]:
