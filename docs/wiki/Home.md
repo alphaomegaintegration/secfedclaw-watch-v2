@@ -14,13 +14,15 @@ An agentic, connection-aware securities-surveillance prototype that fuses social
 - **[Polygon Flat Files Integration](Polygon-Flat-Files-Integration.md)** — S3-compatible historical day-aggregate access, SigV4 signing, caching, and real-data historical backtest replay
 - **[EDGAR Daily-Diff Pipeline](EDGAR-Daily-Diff-Pipeline.md)** — Incremental SEC filing ingestion with state watermarking and issuer-event scoring
 - **[Architecture Overview](Architecture-Overview.md)** — Agentic pipeline, data flow, and scoring engine design
+- **[Deployment and Monitoring](Deployment-and-Monitoring.md)** — Scheduled daily runs, preflight, digest, dashboard server, monitoring, and troubleshooting
 - **[Running the System](Running-the-System.md)** — CLI reference, environment setup, and operational modes
 
 ## Quick Start
 
 ```bash
-python3 tests/test_v2.py                      # 46 tests across 7 files
+python3 -m pytest tests/ -q                   # 52 tests across 9 files
 python3 pipeline.py                            # scan -> backtest -> dashboard
-python3 historical.py --case TICKER:DATE:label # real-data historical replay
-python3 edgar_pipeline.py --tickers AAPL       # incremental SEC filing ingestion
+python3 daily.py                               # scheduled daily run (preflight->scan->dashboard->digest)
+python3 preflight.py                           # per-source live-readiness check
+python3 serve.py                               # dashboard at http://127.0.0.1:8787/
 ```

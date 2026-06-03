@@ -19,6 +19,9 @@
 | `REDDIT_CLIENT_SECRET` | For live Reddit data | Reddit app client secret |
 | `REDDIT_USER_AGENT` | For live Reddit data | Optional; defaults to `secfedclaw-watch/2.0` |
 | `SECFEDCLAW_AUTHORIZED_SOCIAL` | For Discord/Telegram import | Set to `1` to enable; OFF by default |
+| `TELEGRAM_BOT_TOKEN` | For daily digest delivery | Telegram bot token |
+| `TELEGRAM_HOME_CHANNEL` | For daily digest delivery | Telegram chat/channel ID |
+| `SECFEDCLAW_DASHBOARD_URL` | For digest deep-link | e.g. `http://127.0.0.1:8787/dashboard_v2.html` |
 | `FIRECRAWL_API_KEY` | For promotion sources | Firecrawl API key |
 
 ## CLI Reference
@@ -56,11 +59,21 @@ python3 backtest.py --n 50    # precision/recall calibration (50 windows per cla
 ### Dashboard
 ```bash
 python3 dashboard_v2.py    # render out/dashboard_v2.html
+python3 serve.py           # serve at http://127.0.0.1:8787/
+```
+
+### Daily Run + Monitoring
+```bash
+python3 preflight.py                           # per-source live-readiness check
+python3 daily.py                               # full daily pipeline (6 steps)
+python3 notify.py --print                      # preview digest text
+./deploy/schedule_install.sh install           # install launchd job (macOS)
+./deploy/schedule_install.sh status            # check launchd status
 ```
 
 ### Tests
 ```bash
-python3 -m pytest tests/ -v              # all 46 tests
+python3 -m pytest tests/ -v              # all 52 tests
 python3 -m pytest tests/test_v2.py -v    # core scoring (14 tests)
 python3 -m pytest tests/test_edgar.py -v # EDGAR pipeline (6 tests)
 python3 -m pytest tests/test_flatfiles.py -v  # flat files (5 tests)
@@ -68,6 +81,9 @@ python3 -m pytest tests/test_social.py -v     # multi-platform social (5 tests)
 python3 -m pytest tests/test_security_class.py -v  # security-class thresholds (4 tests)
 python3 -m pytest tests/test_social_import.py -v   # Discord/Telegram import (6 tests)
 python3 -m pytest tests/test_model.py -v           # GBM model + ledger (6 tests)
+python3 -m pytest tests/test_notify.py -v          # daily digest (3 tests)
+python3 -m pytest tests/test_serve.py -v           # dashboard server + deep-link (3 tests)
+python3 -m pytest tests/test_daily.py -v           # daily run + lock (2 tests)
 ```
 
 ## Operational Modes
@@ -81,15 +97,9 @@ Reads from cached custody artifacts under `out/`, `flatfiles/day_aggs/`, and `st
 ### Offline / Degraded
 When a data source is unavailable (no cache, no credentials), it contributes zero to scores. The system never fabricates data — unavailable sources are explicitly marked and excluded from corroboration.
 
-## Cron Setup
+## Scheduled Runs
 
-```bash
-# EDGAR daily-diff: weekdays at 9am
-0 9 * * 1-5  cd /path/to/secfedclaw_v2 && python3 edgar_pipeline.py
-
-# Full pipeline: weekdays at 10am (after EDGAR)
-0 10 * * 1-5  cd /path/to/secfedclaw_v2 && python3 pipeline.py
-```
+See **[Deployment and Monitoring](Deployment-and-Monitoring.md)** for full details on launchd/cron setup, preflight, digest delivery, monitoring commands, and troubleshooting.
 
 ## Output Files
 
@@ -105,3 +115,8 @@ When a data source is unavailable (no cache, no credentials), it contributes zer
 | `out/ledger/labels.jsonl` | Operator outcome labels for model training |
 | `out/model/model.json` | Trained GBM review-priority model |
 | `out/social_import/` | Operator-provided Discord/Telegram exports (opt-in) |
+| `out/daily_run_summary.json` | Latest daily run summary (machine-readable) |
+| `out/digest_<UTC>.txt` | Digest file fallback (when Telegram unavailable) |
+| `logs/daily_<UTC>.log` | Full daily run log |
+| `logs/launchd.out.log` | Launchd stdout |
+| `logs/launchd.err.log` | Launchd stderr (should be empty) |
