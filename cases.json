@@ -11,6 +11,10 @@
 
   {"ticker": "ONEI", "event_date": "2024-06-15", "label": "pump", "case": "Wintercap/OneLife Technologies 2024", "src": "SEC enforcement 2024", "notes": "OneLife Technologies - Wintercap nominee scheme, offshore accumulation"},
 
+  {"ticker": "OST", "event_date": "2025-06-26", "label": "pump", "case": "Ostin Technology Pump-and-Dump 2025", "src": "DOJ E.D. Va. 1:25-cr-00259", "notes": "$950M market cap destroyed in one day, 94% crash, WhatsApp/Instagram deepfake AI promotion"},
+  {"ticker": "OST", "event_date": "2025-06-15", "label": "pump", "case": "Ostin Technology Pump-and-Dump 2025", "src": "DOJ E.D. Va. 1:25-cr-00259", "notes": "Peak ramp phase, 1175% price inflation over 73 days"},
+  {"ticker": "OST", "event_date": "2025-05-15", "label": "pump", "case": "Ostin Technology Pump-and-Dump 2025", "src": "DOJ E.D. Va. 1:25-cr-00259", "notes": "Early promotional campaign launch, WhatsApp groups active"},
+
   {"ticker": "MSFT", "event_date": "2025-01-29", "label": "control", "case": "Control - large cap", "notes": "Same date as CLEU collapse, no pump activity"},
   {"ticker": "AAPL", "event_date": "2025-01-24", "label": "control", "case": "Control - large cap", "notes": "Routine trading day"},
   {"ticker": "AAPL", "event_date": "2021-03-15", "label": "control", "case": "Control - large cap", "notes": "Same date as GTTN pump, no pump activity"},
