@@ -47,12 +47,17 @@ def _bar(value: float, cap: float = 100.0, cls: str = "") -> str:
             f'<span class="bar-num">{value:.1f}</span></div>')
 
 
+CLASS_ABBR = {"thin_microcap": "thin/μcap", "small_cap": "small", "mid_cap": "mid",
+              "large_cap": "large", "unknown": "?"}
+
+
 def queue_rows(queue: dict[str, Any]) -> str:
     rows = []
     for r in queue.get("review_queue", []):
         if "error" in r:
-            rows.append(f'<tr><td>{esc(r["ticker"])}</td><td colspan="6" class="muted">error: {esc(r["error"])}</td></tr>')
+            rows.append(f'<tr><td>{esc(r["ticker"])}</td><td colspan="7" class="muted">error: {esc(r["error"])}</td></tr>')
             continue
+        cls = CLASS_ABBR.get(r.get("security_class"), esc(r.get("security_class") or "?"))
         rows.append(
             f'<tr data-priority="{esc(r["review_priority"])}">'
             f'<td><b>{esc(r["ticker"])}</b></td>'
@@ -61,8 +66,52 @@ def queue_rows(queue: dict[str, Any]) -> str:
             f'<td>{_bar(r.get("anomaly_evidence_score",0), cls="anom")}</td>'
             f'<td class="num">{r.get("evidence_quality_score",0):.0f}</td>'
             f'<td class="num">{r.get("n_families_active",0)}</td>'
+            f'<td class="muted small">{cls}</td>'
             f'<td class="muted">{esc(r.get("data_mode","?"))}</td></tr>')
-    return "".join(rows) or '<tr><td colspan="7" class="muted">No review queue found. Run scan.py first.</td></tr>'
+    return "".join(rows) or '<tr><td colspan="8" class="muted">No review queue found. Run scan.py first.</td></tr>'
+
+
+def kpi_panel(queue: dict[str, Any], packages: list[dict[str, Any]]) -> str:
+    q = queue.get("review_queue", [])
+    valid = [r for r in q if "error" not in r]
+    universe = queue.get("universe_size", len(q))
+    dist = {p: sum(1 for r in valid if r.get("review_priority") == p)
+            for p in ("CRITICAL_REVIEW", "HIGH", "MEDIUM", "LOW")}
+    flagged = dist["CRITICAL_REVIEW"] + dist["HIGH"] + dist["MEDIUM"]
+    mean_anom = round(sum(r.get("anomaly_evidence_score", 0) for r in valid) / len(valid), 1) if valid else 0
+    score_ready = round(len(valid) / universe * 100, 0) if universe else 0
+    kpis = [
+        ("universe", universe), ("scored", len(valid)),
+        ("score-ready %", f"{score_ready:.0f}%"), ("flagged ≥MED", flagged),
+        ("CRITICAL", dist["CRITICAL_REVIEW"]), ("HIGH", dist["HIGH"]),
+        ("mean anomaly", mean_anom), ("mode", queue.get("data_mode", "?")),
+    ]
+    cards = "".join(f'<div class="kpi"><div class="kpi-num">{esc(v)}</div>'
+                    f'<div class="kpi-lbl">{esc(k)}</div></div>' for k, v in kpis)
+    return f'<div class="kpis">{cards}</div>'
+
+
+def source_health_panel(queue: dict[str, Any]) -> str:
+    agg: dict[str, dict[str, int]] = {}
+    for r in queue.get("review_queue", []):
+        for src, h in (r.get("source_health") or {}).items():
+            a = agg.setdefault(src, {"ok": 0, "total": 0, "live": 0, "replay": 0})
+            a["total"] += 1
+            if h.get("ok"):
+                a["ok"] += 1
+            if h.get("mode") == "live":
+                a["live"] += 1
+            elif h.get("mode") == "replay":
+                a["replay"] += 1
+    if not agg:
+        return ""
+    rows = "".join(
+        f'<tr><td>{esc(s)}</td><td class="num">{v["ok"]}/{v["total"]}</td>'
+        f'<td class="num">{v["live"]}</td><td class="num">{v["replay"]}</td></tr>'
+        for s, v in sorted(agg.items()))
+    return ('<div class="card"><h3>Source health (across scanned tickers)</h3>'
+            '<table class="mini"><tr><th>source</th><th class="num">ok</th>'
+            f'<th class="num">live</th><th class="num">replay</th></tr>{rows}</table></div>')
 
 
 def package_cards(packages: list[dict[str, Any]]) -> str:
@@ -185,7 +234,9 @@ def build_html(queue: dict, packages: list, bt: dict) -> str:
         "<div class='tab' onclick=\"show('bt',this)\">Backtest / Calibration</div>"
         "</div>"
         # queue
-        "<div id='q' class='panel active'><div class='card'><h2>Ranked review queue</h2>"
+        "<div id='q' class='panel active'>"
+        f"{kpi_panel(queue, packages)}"
+        "<div class='card'><h2>Ranked review queue</h2>"
         "<div class='filters'>Filter: "
         "<button onclick=\"filt('ALL')\">All</button>"
         "<button onclick=\"filt('CRITICAL_REVIEW')\">Critical</button>"
@@ -193,10 +244,12 @@ def build_html(queue: dict, packages: list, bt: dict) -> str:
         "<button onclick=\"filt('MEDIUM')\">Medium</button>"
         "<button onclick=\"filt('LOW')\">Low</button></div>"
         "<table><tr><th>Ticker</th><th>Priority</th><th>Watch score</th><th>Anomaly evidence</th>"
-        "<th class='num'>Ev.Q</th><th class='num'>Families</th><th>Mode</th></tr>"
+        "<th class='num'>Ev.Q</th><th class='num'>Families</th><th>Class</th><th>Mode</th></tr>"
         f"{queue_rows(queue)}</table>"
         "<p class='muted small'>Review priority only. Not a trading signal or proof of misconduct. "
-        "HIGH/CRITICAL requires ≥2 independent corroborating families.</p></div></div>"
+        "HIGH/CRITICAL requires ≥2 independent corroborating families. Thresholds are "
+        "calibrated per liquidity class (thin/μcap → small → mid → large).</p></div>"
+        f"{source_health_panel(queue)}</div>"
         # packages
         f"<div id='pk' class='panel'><h2>WATCH packages</h2>{package_cards(packages)}</div>"
         # backtest

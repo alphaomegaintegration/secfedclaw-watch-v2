@@ -149,10 +149,13 @@ should — which lifted precision from 0.65 to 0.71 with no recall loss.
 
 Self-contained offline HTML (inline CSS/JS, **no external callbacks**, same
 constraint as the production dashboard) → `out/dashboard_v2.html`. Three tabs:
-ranked **Review Queue** (priority-filterable), **Packages** (component bars,
-caps, coordination clusters, adversary caveats, benign review), and
-**Backtest / Calibration** (KPI cards, confusion matrix, calibration ledger,
-SEC case corpus). Run `python3 pipeline.py` to refresh all three from data.
+ranked **Review Queue** (priority-filterable, with a **liquidity-class** column),
+**Packages** (component bars, caps, coordination clusters, adversary caveats,
+benign review), and **Backtest / Calibration** (confusion matrix, ledger, SEC
+case corpus). The Review Queue now leads with operator **KPI cards** — universe
+size, **score-ready %**, flagged ≥MEDIUM, CRITICAL/HIGH counts, mean
+anomaly-evidence, data mode — plus a **source-health panel** aggregating
+live/replay/ok across scanned tickers. Run `python3 pipeline.py` to refresh.
 
 ## 8. EDGAR daily-diff pipeline (implemented — `edgar_pipeline.py`)
 
@@ -225,7 +228,28 @@ burst-sync coordination graph, so coordinated promo spanning platforms surfaces
 naturally. Validated: a 3-platform coordinated pump (8-post duplicate cluster,
 unanimous bullish) scored coordination 72 and reached MEDIUM.
 
-## 11. Roadmap (next, in priority order)
+## 11. Per-security-class calibration (implemented — `features/security_class.py`)
+
+Detection thresholds are now **calibrated per liquidity class** instead of being
+one-size-fits-all — the fix for both the "large-cap floats at MEDIUM" noise and
+under-sensitivity on the microcaps that pumps actually target. Each ticker is
+classified by a price + daily-dollar-volume proxy into
+`thin_microcap / small_cap / mid_cap / large_cap`, and the class sets:
+
+| class | z_confirm | routine-context floor | social weight |
+|---|---:|---:|---:|
+| thin / microcap / OTC-like | 2.5 | 18 | 1.25× |
+| small cap | 2.8 | 22 | 1.10× |
+| mid cap | 3.0 | 26 | 1.00× |
+| large / mega cap | 3.6 | 33 | 0.85× |
+
+So a large cap needs stronger, higher-z double-confirmation and far more
+anomaly-evidence to escape LOW, while a thin microcap is more sensitive and
+weights social/promo higher. The class + thresholds are emitted in every package
+(`security_class`) and shown in the dashboard. Validated: AAPL → `large_cap`
+(floor 33), AMC → `small_cap` (floor 22); backtest precision/recall unchanged.
+
+## 12. Roadmap (next, in priority order)
 
 1. **Discord/Telegram** promotion-channel ingestion (requires lawful authorization).
 4. Merge the v0.2 panel into the production dashboard + score-ready-ratio KPI.

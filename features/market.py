@@ -102,6 +102,9 @@ def time_series_anomaly(daily_fetch_data: Any) -> dict[str, Any]:
     out["price_z"] = round(price_z, 3) if price_z == price_z else None
     out["volume_z"] = round(vol_z, 3) if vol_z == vol_z else None
     out["double_confirmed"] = bool((price_z == price_z and price_z >= 3.0) and (vol_z == vol_z and vol_z >= 3.0))
+    last = results[-1]
+    out["last_close"] = last.get("c")
+    out["last_dollar_volume"] = (last.get("v") or 0) * (last.get("vw") or last.get("c") or 0)
     return out
 
 
@@ -188,10 +191,16 @@ def microstructure(snapshot_fetch: Any, trades_fetch: Any, quotes_fetch: Any) ->
     return out
 
 
-def market_anomaly_score(ts: dict[str, Any], xs: dict[str, Any], micro: dict[str, Any]) -> tuple[float, dict[str, Any]]:
-    """Compose a 0..100 market anomaly score with double-confirmation logic."""
-    detail: dict[str, Any] = {"basis": []}
+def market_anomaly_score(ts: dict[str, Any], xs: dict[str, Any], micro: dict[str, Any],
+                         z_confirm: float = 3.0) -> tuple[float, dict[str, Any]]:
+    """Compose a 0..100 market anomaly score with double-confirmation logic.
+
+    `z_confirm` is the per-security-class robust-z required for price+volume
+    double-confirmation (lower for thin microcaps, higher for liquid names).
+    """
+    detail: dict[str, Any] = {"basis": [], "z_confirm": z_confirm}
     score = 0.0
+    ts_confirmed = xs_confirmed = False
 
     # Time-series robust component (price+volume, saturating).
     if ts.get("available"):
@@ -202,9 +211,10 @@ def market_anomaly_score(ts: dict[str, Any], xs: dict[str, Any], micro: dict[str
         if vz is not None:
             score += rs.squash(max(vz, 0), scale=3.0, cap=25)
             detail["basis"].append(f"time-series volume robust-z={vz}")
-        if ts.get("double_confirmed"):
+        ts_confirmed = bool(pz is not None and vz is not None and pz >= z_confirm and vz >= z_confirm)
+        if ts_confirmed:
             score += 15
-            detail["basis"].append("time-series price+volume double-confirmed")
+            detail["basis"].append(f"time-series price+volume double-confirmed (z>={z_confirm})")
 
     # Cross-sectional component.
     if xs.get("available"):
@@ -212,9 +222,10 @@ def market_anomaly_score(ts: dict[str, Any], xs: dict[str, Any], micro: dict[str
         score += rs.squash(max(pz or 0, 0), scale=3.0, cap=25)
         score += rs.squash(max(vz or 0, 0), scale=3.0, cap=20)
         detail["basis"].append(f"cross-sectional return-xz={pz}, volume-xz={vz}")
-        if xs.get("double_confirmed"):
+        xs_confirmed = bool((pz or 0) >= z_confirm and (vz or 0) >= z_confirm)
+        if xs_confirmed:
             score += 10
-            detail["basis"].append("cross-sectional price+volume double-confirmed")
+            detail["basis"].append(f"cross-sectional price+volume double-confirmed (z>={z_confirm})")
         if xs.get("thin_liquidity"):
             detail["thin_liquidity"] = True
             detail["basis"].append("thin liquidity: microcap pump-risk context, treat z with care")
@@ -228,7 +239,7 @@ def market_anomaly_score(ts: dict[str, Any], xs: dict[str, Any], micro: dict[str
             score += 3
             detail["basis"].append(f"wide median spread={micro['median_spread_bps']}bps")
 
-    detail["double_confirmed"] = bool(ts.get("double_confirmed") or xs.get("double_confirmed"))
+    detail["double_confirmed"] = bool(ts_confirmed or xs_confirmed)
     return rs.squash(score, scale=55, cap=100) if score > 100 else min(score, 100.0), detail
 
 

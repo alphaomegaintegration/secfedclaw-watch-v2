@@ -140,6 +140,7 @@ class PackagerAgent:
             "anomaly_evidence_score": package["anomaly_evidence_score"],
             "evidence_quality_score": package["evidence_quality_score"],
             "n_families_active": package["corroboration"]["n_families_active"],
+            "security_class": package.get("security_class", {}).get("class"),
             "data_mode": package["data_mode"],
             "package_path": str(path),
             "package_sha256": hashlib.sha256(blob.encode()).hexdigest(),

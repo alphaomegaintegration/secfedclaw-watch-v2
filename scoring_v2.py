@@ -34,6 +34,7 @@ from features import coordination as coord  # noqa: E402
 from features import official as off  # noqa: E402
 from features import temporal as temporal  # noqa: E402
 from features import edgar as edgar_feat  # noqa: E402
+from features import security_class as secclass  # noqa: E402
 
 def score_to_priority(score: float) -> str:
     if score >= 75:
@@ -79,7 +80,12 @@ def build_package(ticker: str, fetches: dict[str, Any]) -> dict[str, Any]:
         fetches["trades"].data if fetches.get("trades") else None,
         fetches["quotes"].data if fetches.get("quotes") else None,
     )
-    market_anomaly, market_detail = mkt.market_anomaly_score(ts, xs, micro)
+    # Per-security-class calibration (thresholds differ by liquidity class).
+    price = ts.get("last_close")
+    dollar_volume = (xs.get("dollar_volume") if xs.get("available") else None) or ts.get("last_dollar_volume")
+    cls = secclass.classify(price, dollar_volume)
+    sec_cls = {"class": cls, **secclass.params(cls), "price": price, "dollar_volume": dollar_volume}
+    market_anomaly, market_detail = mkt.market_anomaly_score(ts, xs, micro, z_confirm=sec_cls["z_confirm"])
 
     # ---- social ----
     reddit_unavailable = bool(fetches.get("reddit_unavailable", True))
@@ -118,7 +124,8 @@ def build_package(ticker: str, fetches: dict[str, Any]) -> dict[str, Any]:
     issuer_event_val, issuer_event_basis = edgar_feat.issuer_event_score(edgar_features or {})
 
     component_scores = {
-        "social_issuer_specific_burst": social_scores["social_issuer_specific_burst"],
+        "social_issuer_specific_burst": round(min(
+            social_scores["social_issuer_specific_burst"] * sec_cls["social_weight"], 100), 2),
         "social_promotional_noise": social_scores["social_promotional_noise"],
         "market_anomaly_score": round(market_anomaly, 2),
         "market_structure_score": off_scores["market_structure_score"],
@@ -183,9 +190,9 @@ def build_package(ticker: str, fetches: dict[str, Any]) -> dict[str, Any]:
     if reddit_unavailable and component_scores["social_issuer_specific_burst"] > 0 and active <= 1:
         score = min(score, 24)
         caps.append("social-corroboration-unavailable cap (LOW)")
-    if anomaly_evidence < 25 and component_scores["market_structure_score"] == 0 and component_scores["halt_regulatory_score"] == 0:
+    if anomaly_evidence < sec_cls["floor"] and component_scores["market_structure_score"] == 0 and component_scores["halt_regulatory_score"] == 0:
         score = min(score, 24)
-        caps.append("routine-context floor cap (LOW): reviewability without concern-bearing anomaly")
+        caps.append(f"routine-context floor cap (LOW): anomaly_evidence<{sec_cls['floor']} for {sec_cls['class']} class")
 
     priority = score_to_priority(score)
 
@@ -208,6 +215,13 @@ def build_package(ticker: str, fetches: dict[str, Any]) -> dict[str, Any]:
         "review_priority": priority,
         "anomaly_evidence_score": anomaly_evidence,
         "evidence_quality_score": round(ev_quality, 2),
+        "security_class": {
+            "class": sec_cls["class"], "label": sec_cls["label"],
+            "z_confirm": sec_cls["z_confirm"], "routine_context_floor": sec_cls["floor"],
+            "social_weight": sec_cls["social_weight"],
+            "price": round(price, 4) if isinstance(price, (int, float)) else None,
+            "dollar_volume": round(dollar_volume, 2) if isinstance(dollar_volume, (int, float)) else None,
+        },
         "corroboration": corr,
         "component_scores": {k: component_scores[k] for k in (
             "social_issuer_specific_burst", "social_promotional_noise",

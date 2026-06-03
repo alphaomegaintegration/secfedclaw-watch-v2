@@ -54,6 +54,10 @@ It does NOT produce trading signals, accusations, or findings above WATCH.
    one schema; adds sentiment (Bullish/Bearish), cross-platform corroboration,
    and a unanimous-bullish+promo coordination nudge. Reddit needs
    `REDDIT_CLIENT_ID`/`REDDIT_CLIENT_SECRET`; StockTwits is public.
+10. **Per-security-class calibration** (`features/security_class.py`) — liquidity
+    class (thin/μcap → small → mid → large) sets z_confirm, routine-context
+    floor, and social weight, emitted as `security_class` and shown on the
+    dashboard (KPI cards, score-ready %, source-health, class column).
 
 ## Commands
 
