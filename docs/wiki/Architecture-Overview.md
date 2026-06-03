@@ -75,9 +75,11 @@ out/
 
 ## Test Suite
 
-35 tests across 5 files:
+46 tests across 7 files:
 - `tests/test_v2.py` — 14 tests (robust stats, market, coordination, social, composite)
 - `tests/test_edgar.py` — 6 tests (parsing, features, scoring integration)
 - `tests/test_flatfiles.py` — 5 tests (parsing, signing, market fetches, scoring)
 - `tests/test_social.py` — 5 tests (multi-platform normalization, sentiment, scoring integration)
-- `tests/test_security_class.py` — 5 tests (classification, threshold ordering, class-aware scoring)
+- `tests/test_security_class.py` — 4 tests (classification, threshold ordering, class-aware scoring)
+- `tests/test_social_import.py` — 6 tests (Telegram/Discord/JSONL parsing, authorization gate)
+- `tests/test_model.py` — 6 tests (feature extraction, GBM fit/predict, AUC, serialization, abstention, bootstrap)

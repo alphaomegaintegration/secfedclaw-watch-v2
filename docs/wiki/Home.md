@@ -8,6 +8,7 @@ An agentic, connection-aware securities-surveillance prototype that fuses social
 
 ## Pages
 
+- **[Social Import + Model](Social-Import-and-Model.md)** — Authorized Discord/Telegram import, gradient-boosted review-priority model, and calibration ledger
 - **[Security-Class Thresholds](Security-Class-Thresholds.md)** — Per-liquidity-class calibrated detection thresholds and operator dashboard KPIs
 - **[Multi-Platform Social Signals](Multi-Platform-Social-Signals.md)** — Reddit OAuth, StockTwits sentiment, cross-platform normalization, and coordination detection
 - **[Polygon Flat Files Integration](Polygon-Flat-Files-Integration.md)** — S3-compatible historical day-aggregate access, SigV4 signing, caching, and real-data historical backtest replay
@@ -18,7 +19,7 @@ An agentic, connection-aware securities-surveillance prototype that fuses social
 ## Quick Start
 
 ```bash
-python3 tests/test_v2.py                      # 14 + 6 + 5 + 5 + 5 = 35 tests
+python3 tests/test_v2.py                      # 46 tests across 7 files
 python3 pipeline.py                            # scan -> backtest -> dashboard
 python3 historical.py --case TICKER:DATE:label # real-data historical replay
 python3 edgar_pipeline.py --tickers AAPL       # incremental SEC filing ingestion

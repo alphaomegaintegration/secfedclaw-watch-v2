@@ -18,6 +18,7 @@
 | `REDDIT_CLIENT_ID` | For live Reddit data | Reddit app client ID (reddit.com/prefs/apps) |
 | `REDDIT_CLIENT_SECRET` | For live Reddit data | Reddit app client secret |
 | `REDDIT_USER_AGENT` | For live Reddit data | Optional; defaults to `secfedclaw-watch/2.0` |
+| `SECFEDCLAW_AUTHORIZED_SOCIAL` | For Discord/Telegram import | Set to `1` to enable; OFF by default |
 | `FIRECRAWL_API_KEY` | For promotion sources | Firecrawl API key |
 
 ## CLI Reference
@@ -59,12 +60,14 @@ python3 dashboard_v2.py    # render out/dashboard_v2.html
 
 ### Tests
 ```bash
-python3 -m pytest tests/ -v              # all 35 tests
+python3 -m pytest tests/ -v              # all 46 tests
 python3 -m pytest tests/test_v2.py -v    # core scoring (14 tests)
 python3 -m pytest tests/test_edgar.py -v # EDGAR pipeline (6 tests)
 python3 -m pytest tests/test_flatfiles.py -v  # flat files (5 tests)
 python3 -m pytest tests/test_social.py -v     # multi-platform social (5 tests)
-python3 -m pytest tests/test_security_class.py -v  # security-class thresholds (5 tests)
+python3 -m pytest tests/test_security_class.py -v  # security-class thresholds (4 tests)
+python3 -m pytest tests/test_social_import.py -v   # Discord/Telegram import (6 tests)
+python3 -m pytest tests/test_model.py -v           # GBM model + ledger (6 tests)
 ```
 
 ## Operational Modes
@@ -99,3 +102,6 @@ When a data source is unavailable (no cache, no credentials), it contributes zer
 | `out/edgar/issuer_features_<TICKER>.json` | Per-ticker EDGAR issuer-event features |
 | `state/edgar_state.json` | EDGAR pipeline watermark (last date, seen accessions) |
 | `flatfiles/day_aggs/<DATE>.csv.gz` | Cached historical day-aggregate flat files |
+| `out/ledger/labels.jsonl` | Operator outcome labels for model training |
+| `out/model/model.json` | Trained GBM review-priority model |
+| `out/social_import/` | Operator-provided Discord/Telegram exports (opt-in) |
