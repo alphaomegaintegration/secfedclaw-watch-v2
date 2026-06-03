@@ -15,6 +15,11 @@
   {"ticker": "OST", "event_date": "2025-06-15", "label": "pump", "case": "Ostin Technology Pump-and-Dump 2025", "src": "DOJ E.D. Va. 1:25-cr-00259", "notes": "Peak ramp phase, 1175% price inflation over 73 days"},
   {"ticker": "OST", "event_date": "2025-05-15", "label": "pump", "case": "Ostin Technology Pump-and-Dump 2025", "src": "DOJ E.D. Va. 1:25-cr-00259", "notes": "Early promotional campaign launch, WhatsApp groups active"},
 
+  {"ticker": "ROKU", "event_date": "2019-01-08", "label": "pump", "case": "Citron Research Short-and-Distort", "src": "DOJ 2:24-cr-456 C.D. Cal.", "notes": "Left tweeted ROKU 'uninvestible', shorted, made $700K same day. Convicted Jun 2026. Short-side manipulation via Twitter/X"},
+  {"ticker": "NVDA", "event_date": "2018-11-19", "label": "pump", "case": "Citron Research Short-and-Distort", "src": "DOJ 2:24-cr-456 C.D. Cal.", "notes": "Left tweeted 'Citron buys NVDA $165 target', sold all within 2 hours for $960K profit. Long-side manipulation"},
+  {"ticker": "CRON", "event_date": "2019-02-05", "label": "pump", "case": "Citron Research Short-and-Distort", "src": "DOJ 2:24-cr-456 C.D. Cal.", "notes": "Cronos Group cannabis — Left shorted via Citron report then covered. CEO testified at trial"},
+  {"ticker": "XL", "event_date": "2021-01-21", "label": "pump", "case": "Citron Research Short-and-Distort", "src": "DOJ 2:24-cr-456 C.D. Cal.", "notes": "XL Fleet — Left published bearish report, traded opposite. Short-side"},
+
   {"ticker": "MSFT", "event_date": "2025-01-29", "label": "control", "case": "Control - large cap", "notes": "Same date as CLEU collapse, no pump activity"},
   {"ticker": "AAPL", "event_date": "2025-01-24", "label": "control", "case": "Control - large cap", "notes": "Routine trading day"},
   {"ticker": "AAPL", "event_date": "2021-03-15", "label": "control", "case": "Control - large cap", "notes": "Same date as GTTN pump, no pump activity"},
