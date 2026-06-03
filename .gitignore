@@ -44,3 +44,5 @@ flatfiles/
 
 # run logs
 logs/
+# live custody cache
+live_cache/
