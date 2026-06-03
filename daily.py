@@ -115,6 +115,18 @@ def run(no_live: bool, tickers: list[str], discover: int) -> dict:
         # 5. dashboard
         summary["steps"]["dashboard"] = _run(["dashboard_v2.py"], fh)
 
+        # 6. daily digest (Telegram, or file fallback)
+        try:
+            import json as _json
+            import notify
+            q = _json.loads((OUT / "review_queue.json").read_text())
+            res = notify.deliver(q, summary)
+            summary["digest"] = res
+            _log(fh, f"digest: sent={res.get('sent')} {res.get('fallback_file', '')}")
+        except Exception as e:
+            summary["errors"].append(f"digest: {e}")
+            _log(fh, f"digest error: {e}")
+
         # collect review-queue stats
         try:
             q = json.loads((OUT / "review_queue.json").read_text())

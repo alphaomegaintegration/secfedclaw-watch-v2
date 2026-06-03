@@ -67,9 +67,12 @@ It does NOT produce trading signals, accusations, or findings above WATCH.
     stays primary; never a guilt label.
 
 14. **Scheduled daily run** (`daily.py`, `deploy/`) — lock-protected, logged
-    once-per-day pass (preflight→EDGAR→scan→backtest→dashboard) writing
+    once-per-day pass (preflight→EDGAR→scan→backtest→dashboard→digest) writing
     `out/daily_run_summary.json`; install via launchd (`deploy/schedule_install.sh`)
     or cron (`deploy/secfedclaw.cron`). Independent of the legacy hermes cron.
+15. **Daily digest** (`notify.py`) — Telegram digest of flagged (≥MEDIUM)
+    tickers (token in .env); file fallback when unreachable. Review-priority
+    context only.
 
 ## Commands
 

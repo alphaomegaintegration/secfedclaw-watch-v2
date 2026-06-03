@@ -301,6 +301,14 @@ python3 daily.py                       # run once now (live if reachable)
 This is independent of the legacy 30-minute hermes collector cron — it does not
 modify or replace it.
 
+### Daily digest (`notify.py`)
+
+After each daily run, a concise WATCH digest of the flagged (≥MEDIUM) tickers is
+delivered via Telegram (`TELEGRAM_BOT_TOKEN` + `TELEGRAM_HOME_CHANNEL`); if
+Telegram is unreachable/unconfigured it falls back to `out/digest_<UTC>.txt`.
+Run standalone with `python3 notify.py` (or `--print` to preview). Digest is
+review-priority context for the authorized user only — no trading signals.
+
 ## 15. Roadmap (next, in priority order)
 
 1. Accrue real operator labels in the ledger and retrain (replace synthetic bootstrap).
