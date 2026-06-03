@@ -214,28 +214,39 @@ class DataConnector:
         return self._replay(f"x_recent_{ticker}", f"*/x_recent_search_{ticker}.json", f"*x_recent_search*{ticker.lower()}*.json")
 
     def reddit_oauth(self, ticker: str, subreddits: list[str] | None = None) -> Fetch:
-        """Reddit via authenticated OAuth (app-only client_credentials grant).
+        """Reddit search for a ticker across finance subreddits.
 
-        Public JSON (old.reddit) is 403-blocked; this uses the official OAuth
-        API. Requires REDDIT_CLIENT_ID/REDDIT_CLIENT_SECRET/REDDIT_USER_AGENT.
-        Searches finance subreddits for the ticker; returns Reddit listing JSON.
+        Two access paths, tried in order:
+        1. Public .json endpoint (no auth needed) — appends .json to the search URL.
+           Works without any API key or OAuth; just needs a User-Agent header.
+        2. OAuth (client_credentials) — if REDDIT_CLIENT_ID/SECRET are set.
+        Falls back to replay from cached artifacts if both fail.
         """
         ticker = ticker.upper()
         subs = "+".join(subreddits or ["pennystocks", "stocks", "wallstreetbets",
                                         "Shortsqueeze", "smallstreetbets", "RobinHoodPennyStocks"])
-        cid = self.env.get("REDDIT_CLIENT_ID")
-        csec = self.env.get("REDDIT_CLIENT_SECRET")
         ua = self.env.get("REDDIT_USER_AGENT", "secfedclaw-watch/2.0 by u/secfedclaw")
-        if self.prefer_live and cid and csec:
-            token = self._reddit_token(cid, csec, ua)
-            if token:
-                url = (f"https://oauth.reddit.com/r/{subs}/search?q=%24{ticker}%20OR%20{ticker}"
-                       f"&restrict_sr=on&sort=new&limit=50&t=week")
-                status, data = self._http_json(url, {"Authorization": f"bearer {token}", "User-Agent": ua})
-                if status == 200 and data:
-                    return self._live(f"reddit_{ticker}", status, data, url, note=f"reddit oauth r/{subs}")
+        if self.prefer_live:
+            # Path 1: public .json endpoint (no auth, no key)
+            json_url = (f"https://www.reddit.com/r/{subs}/search.json?q=%24{ticker}+OR+{ticker}"
+                        f"&restrict_sr=on&sort=new&limit=50&t=week")
+            status, data = self._http_json(json_url, {"User-Agent": ua})
+            if status == 200 and data:
+                return self._live(f"reddit_{ticker}", status, data, redact(json_url),
+                                  note=f"reddit .json r/{subs} (no auth)")
+            # Path 2: OAuth fallback (if creds are available)
+            cid = self.env.get("REDDIT_CLIENT_ID")
+            csec = self.env.get("REDDIT_CLIENT_SECRET")
+            if cid and csec:
+                token = self._reddit_token(cid, csec, ua)
+                if token:
+                    url = (f"https://oauth.reddit.com/r/{subs}/search?q=%24{ticker}%20OR%20{ticker}"
+                           f"&restrict_sr=on&sort=new&limit=50&t=week")
+                    status, data = self._http_json(url, {"Authorization": f"bearer {token}", "User-Agent": ua})
+                    if status == 200 and data:
+                        return self._live(f"reddit_{ticker}", status, data, url, note=f"reddit oauth r/{subs}")
         return self._replay(f"reddit_{ticker}", f"*/reddit_*{ticker}*.json", f"*reddit*{ticker.lower()}*.json",
-                            note="reddit unavailable; set REDDIT_CLIENT_ID/SECRET for live OAuth")
+                            note="reddit unavailable offline")
 
     def _reddit_token(self, cid: str, csec: str, ua: str) -> str | None:
         import base64
