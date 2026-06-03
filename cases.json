@@ -1,0 +1,20 @@
+[
+  {"ticker": "CLEU", "event_date": "2025-01-29", "label": "pump", "case": "CLEU Ramp-and-Dump 2025", "src": "DOJ N.D. Ill. 1:25-cr-00161", "notes": "240M secret shares, WhatsApp social media advisors, price collapsed 98% on Jan 30"},
+  {"ticker": "CLEU", "event_date": "2025-01-24", "label": "pump", "case": "CLEU Ramp-and-Dump 2025", "src": "DOJ N.D. Ill. 1:25-cr-00161", "notes": "Mid-ramp window, coordinated buying instructions"},
+  {"ticker": "CLEU", "event_date": "2025-01-15", "label": "pump", "case": "CLEU Ramp-and-Dump 2025", "src": "DOJ N.D. Ill. 1:25-cr-00161", "notes": "Early ramp phase"},
+
+  {"ticker": "GTTN", "event_date": "2021-03-15", "label": "pump", "case": "Atlas Trading Influencer Scheme", "src": "SEC 2022-221", "notes": "GTT Communications - promoted by MrZackMorris/PJ_Matlock on Twitter+Discord"},
+  {"ticker": "SURF", "event_date": "2021-06-10", "label": "pump", "case": "Atlas Trading Influencer Scheme", "src": "SEC 2022-221", "notes": "Surface Oncology - influencer pump via Atlas Trading Discord"},
+  {"ticker": "UPC", "event_date": "2021-04-20", "label": "pump", "case": "Atlas Trading Influencer Scheme", "src": "SEC 2022-221", "notes": "Universe Pharmaceuticals - coordinated social media pump"},
+
+  {"ticker": "SFM", "event_date": "2022-02-01", "label": "pump", "case": "SafeMoon Crypto Scheme", "src": "SEC 2023", "notes": "SafeMoon token - crypto pump-and-dump, massive social media coordination"},
+
+  {"ticker": "ONEI", "event_date": "2024-06-15", "label": "pump", "case": "Wintercap/OneLife Technologies 2024", "src": "SEC enforcement 2024", "notes": "OneLife Technologies - Wintercap nominee scheme, offshore accumulation"},
+
+  {"ticker": "MSFT", "event_date": "2025-01-29", "label": "control", "case": "Control - large cap", "notes": "Same date as CLEU collapse, no pump activity"},
+  {"ticker": "AAPL", "event_date": "2025-01-24", "label": "control", "case": "Control - large cap", "notes": "Routine trading day"},
+  {"ticker": "AAPL", "event_date": "2021-03-15", "label": "control", "case": "Control - large cap", "notes": "Same date as GTTN pump, no pump activity"},
+  {"ticker": "MSFT", "event_date": "2021-06-10", "label": "control", "case": "Control - large cap", "notes": "Same date as SURF pump, no pump activity"},
+  {"ticker": "TSLA", "event_date": "2021-04-20", "label": "control", "case": "Control - large cap", "notes": "Same date as UPC pump"},
+  {"ticker": "GOOG", "event_date": "2024-06-15", "label": "control", "case": "Control - large cap", "notes": "Same date as ONEI pump"}
+]
