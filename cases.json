@@ -6,6 +6,13 @@
   {"ticker": "GTTN", "event_date": "2021-03-15", "label": "pump", "case": "Atlas Trading Influencer Scheme", "src": "SEC 2022-221", "notes": "GTT Communications - promoted by MrZackMorris/PJ_Matlock on Twitter+Discord"},
   {"ticker": "SURF", "event_date": "2021-06-10", "label": "pump", "case": "Atlas Trading Influencer Scheme", "src": "SEC 2022-221", "notes": "Surface Oncology - influencer pump via Atlas Trading Discord"},
   {"ticker": "UPC", "event_date": "2021-04-20", "label": "pump", "case": "Atlas Trading Influencer Scheme", "src": "SEC 2022-221", "notes": "Universe Pharmaceuticals - coordinated social media pump"},
+  {"ticker": "CEI", "event_date": "2021-10-05", "label": "pump", "case": "Atlas Trading Influencer Scheme", "src": "SEC 2022-221 / DOJ 4:22-cr-00612", "notes": "Camber Energy - Atlas Trading Discord+Twitter pump, OATS/Blue Sheet data matched tweet-to-sell timestamps"},
+  {"ticker": "VKIN", "event_date": "2021-07-15", "label": "pump", "case": "Atlas Trading Influencer Scheme", "src": "SEC 2022-221 / DOJ 4:22-cr-00612", "notes": "Viking Energy - coordinated influencer pump, private chats showed 'robbing idiots'"},
+  {"ticker": "BRQS", "event_date": "2021-08-10", "label": "pump", "case": "Atlas Trading Influencer Scheme", "src": "SEC 2022-221 / DOJ 4:22-cr-00612", "notes": "Borqs Technologies - Atlas Trading pump, mass tweet deletion of failed picks detected"},
+  {"ticker": "UNAM", "event_date": "2021-09-20", "label": "pump", "case": "Atlas Trading Influencer Scheme", "src": "SEC 2022-221 / DOJ 4:22-cr-00612", "notes": "Unamex - coordinated buy calls then immediate sell execution"},
+
+  {"ticker": "SPOM", "event_date": "2021-06-15", "label": "pump", "case": "Gallagher OTC Pump Scheme", "src": "SEC 1:21-cv-08739 S.D.N.Y.", "notes": "Single Twitter handle @Alexandriavbg drove >50% daily OTC volume, fabricated account balance screenshots"},
+  {"ticker": "DPLS", "event_date": "2021-07-20", "label": "pump", "case": "Gallagher OTC Pump Scheme", "src": "SEC 1:21-cv-08739 S.D.N.Y.", "notes": "DarkPulse - volume spike models correlated single Twitter handle to majority of daily volume, SARs triggered"},
 
   {"ticker": "SFM", "event_date": "2022-02-01", "label": "pump", "case": "SafeMoon Crypto Scheme", "src": "SEC 2023", "notes": "SafeMoon token - crypto pump-and-dump, massive social media coordination"},
 
