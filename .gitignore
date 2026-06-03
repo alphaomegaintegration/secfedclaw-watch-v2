@@ -41,3 +41,6 @@ __probe*
 
 # flat-file cache
 flatfiles/
+
+# run logs
+logs/

@@ -1,0 +1,4 @@
+# SECFEDCLAW v0.2 daily run (Linux cron). Edit paths, then: crontab deploy/secfedclaw.cron
+# Runs every weekday at 16:35 local time (after the US market close).
+# Replace /ABS/PATH/secfedclaw-watch-v2 and the python path as needed.
+35 16 * * 1-5 cd /ABS/PATH/secfedclaw-watch-v2 && /usr/bin/python3 daily.py >> logs/cron.out 2>&1

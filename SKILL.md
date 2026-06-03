@@ -66,6 +66,11 @@ It does NOT produce trading signals, accusations, or findings above WATCH.
     contributions; abstains until ≥40 two-class operator labels; rules engine
     stays primary; never a guilt label.
 
+14. **Scheduled daily run** (`daily.py`, `deploy/`) — lock-protected, logged
+    once-per-day pass (preflight→EDGAR→scan→backtest→dashboard) writing
+    `out/daily_run_summary.json`; install via launchd (`deploy/schedule_install.sh`)
+    or cron (`deploy/secfedclaw.cron`). Independent of the legacy hermes cron.
+
 ## Commands
 
 From the repo root:

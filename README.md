@@ -284,7 +284,24 @@ python3 train_model.py            # ledger + synthetic bootstrap
 python3 train_model.py --no-bootstrap   # real ledger labels only
 ```
 
-## 14. Roadmap (next, in priority order)
+### Schedule a daily live run (`daily.py`, `deploy/`)
+
+`daily.py` is a lock-protected, logged once-per-day pass: preflight → EDGAR
+daily-diff → live scan (+discovery) → backtest → dashboard. It writes
+`out/daily_run_summary.json` and `logs/daily_<UTC>.log`, and a lockfile prevents
+overlapping runs.
+
+```bash
+python3 daily.py                       # run once now (live if reachable)
+# macOS (launchd, weekdays 16:35 local, after close):
+./deploy/schedule_install.sh install   # status / uninstall also supported
+# Linux: edit paths in deploy/secfedclaw.cron, then: crontab deploy/secfedclaw.cron
+```
+
+This is independent of the legacy 30-minute hermes collector cron — it does not
+modify or replace it.
+
+## 15. Roadmap (next, in priority order)
 
 1. Accrue real operator labels in the ledger and retrain (replace synthetic bootstrap).
 2. Per-class precision/recall reporting in the backtest (microcap vs large).
@@ -312,8 +329,10 @@ secfedclaw_v2/
   ledger.py            operator calibration-label ledger
   model.py             numpy gradient-boosted review-priority model (advisory)
   train_model.py       train/cross-validate the model (ledger + synthetic bootstrap)
+  daily.py             scheduled daily run (lock, preflight→edgar→scan→backtest→dashboard)
+  deploy/              launchd plist + cron + schedule_install.sh
   features/            market, social (X/Reddit/StockTwits), coordination, official, temporal, edgar, security_class
-  tests/               test_v2 (14) + edgar (6) + flatfiles (5) + social (5) + security_class (5) + social_import (4) + model (6)
+  tests/               test_v2 (14) + edgar (6) + flatfiles (5) + social (5) + security_class (4) + social_import (6) + model (6) + daily (2)
   out/                 generated packages, review_queue, backtest, dashboard, edgar/
   flatfiles/day_aggs/  cached + hashed historical day-aggregate flat files
 ```
