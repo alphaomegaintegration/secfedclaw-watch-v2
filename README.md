@@ -40,30 +40,35 @@ agents flagged — and that this prototype addresses:
   (an Anthropic key + one other). Rotate them and scrub the file.
 - 🟡 README credential status is stale — SEC EDGAR now works (`SEC_USER_AGENT` is set).
 
-## 2. Data sources — current vs recommended
+## 2. Data sources — live status
 
-**Currently wired (and good):** Polygon (aggregates, grouped daily, snapshot,
-trades, quotes) + **Flat Files** history, X recent search, **Reddit OAuth**,
-**StockTwits** (sentiment), SEC EDGAR (submissions, companyfacts, FTD) +
-**daily-diff pipeline**, FINRA (OTC threshold, Reg SHO daily, short interest),
-Nasdaq (Reg SHO threshold, trade-halts RSS).
+**12 of 15 sources are live** with no API keys needed for most. All SEC EDGAR
+APIs are completely keyless per [sec.gov EDGAR APIs](https://www.sec.gov/search-filings/edgar-application-programming-interfaces)
+— only a `User-Agent` header is required.
 
-**Recommended additions (by leverage):**
+| Source | Auth | Status | Notes |
+|---|---|---|---|
+| Polygon aggregates/grouped/snapshot/prev | `POLYGON_API_KEY` | ✅ live | Market data (OHLCV, cross-section) |
+| Polygon Flat Files (S3 history) | `MASSIVE_FLATFILES_*` | ✅ live | Multi-year day-aggs for backtest |
+| X (Twitter) recent search | `X_BEARER_TOKEN` | ✅ live | Cashtag search + engagement |
+| StockTwits symbol stream | None (public) | ✅ live | Native Bullish/Bearish sentiment |
+| SEC EDGAR submissions | None (User-Agent only) | ✅ live | Dynamic CIK lookup for any ticker |
+| SEC EDGAR daily-index | None (User-Agent only) | ✅ live | Daily-diff pipeline (issuer_event) |
+| SEC litigation/admin feeds | None (User-Agent only) | ✅ live | Enforcement history (enforcement family) |
+| FINRA OTC threshold | None (public JSON) | ✅ live | `api.finra.org` threshold list |
+| Nasdaq trade halts | None (public RSS) | ✅ live | `nasdaqtrader.com` halt feed |
+| Nasdaq Reg SHO threshold | None (public) | ✅ live | `nasdaqtrader.com` threshold lists |
+| Reddit OAuth | `REDDIT_CLIENT_ID/SECRET` | ⚠ needs creds | Finance subreddit search |
+| Polygon trades/quotes | Polygon paid tier | ⚠ needs plan | Microstructure (spread, VWAP) |
+| Discord / Telegram | Operator export + opt-in | 🔒 off by default | Authorized import only (§12) |
 
-1. **Polygon Flat Files (S3)** — credentials already in `.env`
-   (`MASSIVE_FLATFILES_*`). Unlocks multi-year per-ticker baselines and the
-   backtest corpus. *Highest leverage for calibration.*
-2. **SEC bulk `submissions.zip` + `companyfacts.zip` daily diffs** — the
-   recursive issuer-context pipeline you scoped in chat. Gives Form 4/144
-   insider-sale and S-1/S-3/424B dilution context as first-class features.
-3. **SEC full-text search (EFTS)** and **litigation/admin-proceeding feeds** —
-   promoter/issuer enforcement history (design doc family E).
-4. **Discord / Telegram** — implemented as an **authorized import** (operator
-   provides lawful exports; no autonomous scraping). See §12.
-5. **Promotion sources** (newsletters/stock-promo disclosures, public/ToS-OK)
-   — design doc Use-Case 3; `FIRECRAWL_API_KEY` is present for bounded fetches.
-6. **Options flow / OPRA** (Polygon entitlement) — unusual options pre-pump.
-7. **Corporate-actions / split & ticker-change feed** — kills the largest class
+**Remaining additions (by leverage):**
+
+1. **Reddit OAuth** — set `REDDIT_CLIENT_ID`/`REDDIT_CLIENT_SECRET` to enable.
+2. **Promotion sources** (newsletters/stock-promo disclosures, public/ToS-OK)
+   — `FIRECRAWL_API_KEY` is present for bounded fetches.
+3. **Options flow / OPRA** (Polygon entitlement) — unusual options pre-pump.
+4. **Corporate-actions / split & ticker-change feed** — kills the largest class
    of false anomalies (the `needs_adjustment_review` flag is stubbed for this).
 
 ## 3. Algorithm upgrades (implemented here)
