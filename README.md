@@ -88,13 +88,14 @@ APIs are completely keyless per [sec.gov EDGAR APIs](https://www.sec.gov/search-
 
 ## 4. Agentic architecture
 
-Four role-bounded agents (`agents.py`), mirroring SOUL.md detect→analyze→review→package:
+Five role-bounded agents (`agents.py`), mirroring SOUL.md detect→analyze→review→explain→package:
 
 ```
 ScoutAgent     → gathers source data (live via .env, else replay), reports health
 AnalystAgent   → runs the v0.2 scoring engine
 AdversaryAgent → red-teams: benign tests, coordination-cluster sanity,
                  corroboration enforcement; may ONLY lower priority / add caveats
+ExplainerAgent → grounded plain-language review summary (LLM or template)
 PackagerAgent  → writes the custody-preserving (sha256) review package
 Orchestrator   → runs the loop per ticker; scan.py runs it across the universe
 ```
@@ -158,9 +159,9 @@ should — which lifted precision from 0.65 to 0.71 with no recall loss.
 
 Self-contained offline HTML (inline CSS/JS, **no auto-loaded external resources
 or callbacks**) → `out/dashboard_v2.html`, built on a small consistent design
-system (color/space/type tokens, accessible contrast). Eight tabs (Overview,
-Packages, Agents, **Status**, **LLM cost**, Methodology, SEC case studies,
-Backtest):
+system (color/space/type tokens, accessible contrast). Nine tabs (Overview,
+Packages, Agents, **Learning**, **Status**, **LLM cost**, Methodology, SEC case
+studies, Backtest):
 
 - **Overview** — operator KPI cards (universe, **score-ready %**, flagged
   ≥MEDIUM, CRITICAL/HIGH, mean anomaly-evidence, mode) + the ranked, filterable
@@ -182,6 +183,9 @@ Backtest):
 - **SEC case studies** — public SEC matters mapped to *which thresholds fire and
   why* (for reviewers and for building labeled training windows), plus a worked
   threshold-hit example.
+- **Learning** — the autonomous feedback cycle (Scan→Review→Learn→Advise),
+  model KPIs (labels, AUC, training data), feature-importance bars, operator
+  label breakdown, and design constraints (abstention, anti-leakage, rules-primary).
 - **Backtest** — precision/recall, confusion matrix, calibration ledger.
 
 Run `python3 pipeline.py` (or `dashboard_v2.py`) to refresh.
@@ -412,8 +416,9 @@ the digest links to the local `file://` path instead.
 ## 16. Roadmap (next, in priority order)
 
 1. Accrue real operator labels in the ledger and retrain (replace synthetic bootstrap).
-2. Per-class precision/recall reporting in the backtest (microcap vs large).
-3. Promoter/issuer enforcement-history feed (SEC litigation releases).
+2. **Reddit OAuth** — set `REDDIT_CLIENT_ID`/`REDDIT_CLIENT_SECRET` to enable (last missing social platform).
+3. Promotion sources (newsletters/stock-promo disclosures) via `FIRECRAWL_API_KEY`.
+4. Corporate-actions / split & ticker-change feed (largest class of false anomalies).
 
 ## 7. Files
 
@@ -447,7 +452,7 @@ secfedclaw_v2/
   explainer.py         LLM-backed review-summary agent (template fallback + guardrails)
   deploy/              launchd plist + cron + schedule_install.sh
   features/            market, social (X/Reddit/StockTwits), coordination, official, temporal, edgar, security_class, enforcement
-  tests/               14 suites, ~72 tests (incl. enforcement, usage, live_flow)
+  tests/               15 suites, ~75 tests (incl. enforcement, usage, live_flow, explainer)
   out/                 generated packages, review_queue, backtest, dashboard, edgar/
   flatfiles/day_aggs/  cached + hashed historical day-aggregate flat files
 ```
