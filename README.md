@@ -58,14 +58,13 @@ APIs are completely keyless per [sec.gov EDGAR APIs](https://www.sec.gov/search-
 | FINRA OTC threshold | None (public JSON) | ✅ live | `api.finra.org` threshold list |
 | Nasdaq trade halts | None (public RSS) | ✅ live | `nasdaqtrader.com` halt feed |
 | Nasdaq Reg SHO threshold | None (public) | ✅ live | `nasdaqtrader.com` threshold lists |
-| Reddit OAuth | `REDDIT_CLIENT_ID/SECRET` | ⚠ needs creds | Finance subreddit search |
+| Reddit (keyless + OAuth fallback) | None / `REDDIT_CLIENT_ID/SECRET` | ✅ live (IP-dependent) | `.json` endpoint first, OAuth fallback; blocked on some IPs |
 | Polygon trades/quotes | Polygon paid tier | ⚠ needs plan | Microstructure (spread, VWAP) |
 | Discord / Telegram | Operator export + opt-in | 🔒 off by default | Authorized import only (§12) |
 
 **Remaining additions (by leverage):**
 
-1. **Reddit OAuth** — set `REDDIT_CLIENT_ID`/`REDDIT_CLIENT_SECRET` to enable.
-2. **Promotion sources** (newsletters/stock-promo disclosures, public/ToS-OK)
+1. **Promotion sources**
    — `FIRECRAWL_API_KEY` is present for bounded fetches.
 3. **Options flow / OPRA** (Polygon entitlement) — unusual options pre-pump.
 4. **Corporate-actions / split & ticker-change feed** — kills the largest class
