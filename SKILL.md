@@ -88,6 +88,10 @@ It does NOT produce trading signals, accusations, or findings above WATCH.
     (per-agent state, integrations, connections) and LLM-cost tab (usage ledger,
     pricing, cost by model/component). `test_live_flow.py` proves data flows
     through the agents in live mode with custody.
+20. **LLM explanation agent** (`explainer.py`, 5th agent) — plain-language review
+    summary grounded only in package evidence; off by default (template), opt in
+    with `SECFEDCLAW_LLM_EXPLAIN=1` (OpenRouter/Anthropic). Guardrail rejects
+    fraud/accusation/trading language; calls are cost-tracked via `usage.py`.
 
 ## Commands
 

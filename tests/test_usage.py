@@ -47,7 +47,8 @@ class TestAgentStatus(unittest.TestCase):
                                "x_recent_AMC": {"mode": "replay", "ok": True},
                                "reddit_AMC": {"mode": "unavailable", "ok": False}}}]}
         st = agent_status.build(queue)
-        self.assertEqual([a["name"] for a in st["agents"]], ["Scout", "Analyst", "Adversary", "Packager"])
+        self.assertEqual([a["name"] for a in st["agents"]],
+                         ["Scout", "Analyst", "Adversary", "Explainer", "Packager"])
         scout = next(a for a in st["agents"] if a["name"] == "Scout")
         self.assertEqual(scout["state"], "live")  # >=1 live integration
         names = {i["integration"] for i in st["integrations"]}

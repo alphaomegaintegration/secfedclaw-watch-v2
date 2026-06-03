@@ -194,7 +194,11 @@ def package_cards(packages: list[dict[str, Any]]) -> str:
             f'<p class="muted small">score {p.get("watch_score",0):.0f} · anomaly {p.get("anomaly_evidence_score",0):.0f} '
             f'· evidence-quality {p.get("evidence_quality_score",0):.0f} · {esc(CLASS_ABBR.get(sc.get("class"), "?"))} '
             f'· {esc(p.get("data_mode","?"))}</p>'
-            f'<table class="mini">{comp_rows}</table>'
+            + (f'<p class="small expl"><b>Review summary</b> '
+               f'<span class="muted">({esc((p.get("review_explanation") or {}).get("source","template"))})</span>: '
+               f'{esc((p.get("review_explanation") or {}).get("text",""))}</p>'
+               if (p.get("review_explanation") or {}).get("text") else "")
+            + f'<table class="mini">{comp_rows}</table>'
             f'<p class="small"><b>Families active:</b> {esc(", ".join(corr.get("families_active",[])) or "none")} '
             f'(×{corr.get("corroboration_multiplier","?")})</p>'
             f'<p class="small"><b>Caps:</b> {esc("; ".join(caps))}</p>'
@@ -226,7 +230,11 @@ AGENTS = [
      "Tests benign explanations, enforces ≥2-family corroboration, checks coordination clusters are real, "
      "flags promotional-noise dominance and replay staleness.",
      "May only LOWER priority or add caveats — never raises it."),
-    ("04", "Packager", "Evidence package",
+    ("04", "Explainer", "Plain-language summary",
+     "Writes a 3–5 sentence review narrative grounded ONLY in the package evidence (LLM when opted in, else a "
+     "deterministic template). Guardrail rejects any fraud/accusation/trading language; usage + cost are recorded.",
+     "review_explanation (source: llm | template) + LLM-cost ledger entry."),
+    ("05", "Packager", "Evidence package",
      "Assembles the WATCH package with custody (artifact paths + SHA256), review questions, limitations, and "
      "the explicit prohibited-actions list.",
      "Non-accusatory review-priority package written to out/ + the ranked queue."),
@@ -238,7 +246,7 @@ def agents_panel(queue: dict[str, Any]) -> str:
         f'<div class="stage"><div class="stage-num">{n}</div><h3>{esc(name)}</h3>'
         f'<div class="tag">{esc(tag)}</div><p class="small">{esc(does)}</p>'
         f'<p class="small out"><b>Output:</b> {esc(out)}</p></div>'
-        + ('<div class="arrow">→</div>' if n != "04" else "")
+        + ('<div class="arrow">→</div>' if n != "05" else "")
         for n, name, tag, does, out in AGENTS)
     return (
         '<p class="intro">Each ticker flows through a four-agent pipeline (the <code>Orchestrator</code> in '
@@ -501,7 +509,9 @@ thead th{color:var(--muted);font-size:11.5px;text-transform:uppercase;letter-spa
 .cm .tp{color:#7ee787}.cm .tn{color:#9cd2ff}.cm .fp{color:#ffba73}.cm .fn{color:#ff9ba0}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:var(--s4)} @media(max-width:760px){.grid2{grid-template-columns:1fr}}
 .pkg-head{display:flex;align-items:center;gap:var(--s3);flex-wrap:wrap;margin-bottom:var(--s2)}
-.warn{color:#ffba73}.adv{color:#9cd2ff}.model{color:#b39ddb}.enf{color:#e0a3c9}.rationale{color:#aeb8cc;border-top:1px dashed var(--line);padding-top:var(--s2);margin-top:var(--s2)}
+.warn{color:#ffba73}.adv{color:#9cd2ff}.model{color:#b39ddb}.enf{color:#e0a3c9}
+.expl{background:var(--panel-2);border-left:3px solid var(--brand);border-radius:6px;padding:8px 10px;color:#cdd8e6}
+.rationale{color:#aeb8cc;border-top:1px dashed var(--line);padding-top:var(--s2);margin-top:var(--s2)}
 .dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px;vertical-align:middle}
 .dot.ok{background:var(--ok)}.dot.warn-d{background:var(--high)}.dot.bad{background:var(--crit)}.dot.idle{background:var(--low)}
 .agent-state{font-size:12px;font-weight:700;margin:2px 0 6px}

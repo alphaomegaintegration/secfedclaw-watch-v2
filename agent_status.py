@@ -25,12 +25,14 @@ AGENT_DEPS = {
               "otc_threshold", "reg_sho", "halts"],
     "Analyst": ["(scout output)"],
     "Adversary": ["(analyst output)"],
+    "Explainer": ["openrouter / anthropic (opt-in)", "usage ledger"],
     "Packager": ["(filesystem custody)"],
 }
 AGENT_ROLE = {
     "Scout": "Pull data feeds (live or replay), record health + custody",
     "Analyst": "Normalize, engineer features, run algorithms, score",
     "Adversary": "Red-team; may only lower priority / add caveats",
+    "Explainer": "Plain-language review summary (LLM opt-in, else template)",
     "Packager": "Assemble custody-preserving WATCH package",
 }
 
@@ -79,8 +81,26 @@ def build(queue: dict[str, Any] | None = None) -> dict[str, Any]:
         # downstream agents are ok whenever a scan produced packages
         return "ok" if queue.get("review_queue") else "idle"
 
-    agents = [{"name": n, "role": AGENT_ROLE[n], "state": agent_state(n),
-               "depends_on": AGENT_DEPS[n]} for n in ("Scout", "Analyst", "Adversary", "Packager")]
+    def explainer_state() -> str:
+        try:
+            import explainer
+            if explainer.llm_enabled():
+                return "live" if any(self_env.get(k) for k in ("OPENROUTER_API_KEY", "ANTHROPIC_API_KEY")) else "ok"
+        except Exception:
+            pass
+        return "ok" if queue.get("review_queue") else "idle"
+
+    self_env = {}
+    try:
+        from config import load_env, fed_claw_root
+        self_env = load_env(fed_claw_root())
+    except Exception:
+        pass
+
+    agents = [{"name": n, "role": AGENT_ROLE[n],
+               "state": (explainer_state() if n == "Explainer" else agent_state(n)),
+               "depends_on": AGENT_DEPS[n]}
+              for n in ("Scout", "Analyst", "Adversary", "Explainer", "Packager")]
 
     try:
         import ledger

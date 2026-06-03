@@ -164,9 +164,9 @@ Backtest):
   externally on click.
 - **Packages** — evidence cards with component bars, families, caps,
   coordination clusters, the model advisory, and a non-accusatory rationale.
-- **Agents** — the four-agent **orchestration** (Scout→Analyst→Adversary→
-  Packager): the data feeds each pulls, the data-engineering + algorithms it
-  applies, and its output, plus the live/replay data-feed health table.
+- **Agents** — the five-agent **orchestration** (Scout→Analyst→Adversary→
+  Explainer→Packager): the data feeds each pulls, the data-engineering +
+  algorithms it applies, and its output, plus the live/replay data-feed table.
 - **Status** — operational view *from an agent perspective*: each agent's live
   state, the integrations it depends on, and per-connection live/replay/ok
   health, plus system KPIs (preflight verdict, model, LLM spend, last run).
@@ -391,6 +391,14 @@ the digest links to the local `file://` path instead.
 - **LLM usage & cost** (`usage.py` + LLM-cost tab) — a dependency-free ledger any
   LLM-using component records to (`usage.record(model, in_tok, out_tok, component)`),
   with a configurable pricing table and cost aggregation by model/component/day.
+- **LLM explanation agent** (`explainer.py`, the 5th agent) — writes a 3–5
+  sentence plain-language review summary grounded ONLY in the package evidence.
+  Off by default (deterministic template); set `SECFEDCLAW_LLM_EXPLAIN=1` to use
+  an LLM (OpenRouter or Anthropic from `.env`). A guardrail rejects any output
+  with fraud/accusation/trading language (falls back to the template), every
+  summary ends with the WATCH disclaimer, and each LLM call is cost-tracked via
+  `usage.py` (so the LLM-cost tab populates). Shown as "Review summary" on each
+  package card.
 - **Live data through the agents** — live is the default (`scan.py --live`);
   `tests/test_live_flow.py` injects a mock live transport and proves data flows
   Scout→Analyst→Adversary→Packager with custody persistence. Real live runs use
@@ -431,6 +439,7 @@ secfedclaw_v2/
   serve.py             localhost static server to view/publish the dashboard
   usage.py             LLM usage & cost ledger (recorder + pricing + summary)
   agent_status.py      per-agent + integration status assembler
+  explainer.py         LLM-backed review-summary agent (template fallback + guardrails)
   deploy/              launchd plist + cron + schedule_install.sh
   features/            market, social (X/Reddit/StockTwits), coordination, official, temporal, edgar, security_class, enforcement
   tests/               14 suites, ~72 tests (incl. enforcement, usage, live_flow)
