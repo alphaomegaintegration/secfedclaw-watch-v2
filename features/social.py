@@ -29,7 +29,8 @@ _CASHTAG_RE = re.compile(r"\$[A-Za-z]{1,6}\b")
 
 
 def normalize_posts(x_fetch_data: Any, reddit_fetch_data: Any = None,
-                    stocktwits_fetch_data: Any = None) -> list[dict[str, Any]]:
+                    stocktwits_fetch_data: Any = None,
+                    imported_posts: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
     posts: list[dict[str, Any]] = []
     if isinstance(x_fetch_data, dict):
         for t in (x_fetch_data.get("data") or []):
@@ -75,6 +76,12 @@ def normalize_posts(x_fetch_data: Any, reddit_fetch_data: Any = None,
                 "author_id": d.get("author"),
                 "engagement": float(d.get("score") or 0) + float(d.get("num_comments") or 0),
             })
+    # operator-authorized imports (Discord/Telegram/etc.), already normalized
+    for p in (imported_posts or []):
+        if isinstance(p, dict) and p.get("text") is not None:
+            p.setdefault("sentiment", None)
+            p.setdefault("engagement", 0.0)
+            posts.append(p)
     # dedup by (platform, id), keep first, record duplicates
     seen: set[tuple] = set()
     deduped: list[dict[str, Any]] = []

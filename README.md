@@ -58,9 +58,8 @@ Nasdaq (Reg SHO threshold, trade-halts RSS).
    insider-sale and S-1/S-3/424B dilution context as first-class features.
 3. **SEC full-text search (EFTS)** and **litigation/admin-proceeding feeds** —
    promoter/issuer enforcement history (design doc family E).
-4. **Discord / Telegram promotion channels** — high-value but require explicit
-   authorization + ToS/legal review (SOUL: private channels need lawful access);
-   left as an explicit evidence gap, not autonomously collected.
+4. **Discord / Telegram** — implemented as an **authorized import** (operator
+   provides lawful exports; no autonomous scraping). See §12.
 5. **Promotion sources** (newsletters/stock-promo disclosures, public/ToS-OK)
    — design doc Use-Case 3; `FIRECRAWL_API_KEY` is present for bounded fetches.
 6. **Options flow / OPRA** (Polygon entitlement) — unusual options pre-pump.
@@ -249,13 +248,47 @@ weights social/promo higher. The class + thresholds are emitted in every package
 (`security_class`) and shown in the dashboard. Validated: AAPL → `large_cap`
 (floor 33), AMC → `small_cap` (floor 22); backtest precision/recall unchanged.
 
-## 12. Roadmap (next, in priority order)
+## 12. Authorized Discord/Telegram import (implemented — `social_import.py`)
 
-1. **Discord/Telegram** promotion-channel ingestion (requires lawful authorization).
-4. Merge the v0.2 panel into the production dashboard + score-ready-ratio KPI.
-5. Per-security-class calibrated thresholds (OTC / microcap / small / large).
-6. Optional gradient-boosted review-priority model once the labeled corpus
-   exists (interpretable, calibrated probability — never a guilt classifier).
+Discord/Telegram are high-value promotion channels but private; SOUL.md requires
+explicit lawful authorization. This adapter therefore performs **no autonomous
+scraping** — it ingests only data the operator has lawfully obtained and placed
+in `out/social_import/` (official Telegram export JSON, Discord/DiscordChatExporter
+JSON, or curated JSONL/CSV), and is **OFF unless opted in** via
+`SECFEDCLAW_AUTHORIZED_SOCIAL=1`. Imported messages normalize into the shared
+post schema, so they flow through the coordination graph and social features
+automatically (platforms `telegram`/`discord`).
+
+## 13. Review-priority model + calibration ledger (implemented — `model.py`, `ledger.py`, `train_model.py`)
+
+A dependency-light (numpy-only, **no sklearn**) **gradient-boosted** classifier
+over decision stumps that outputs a *calibrated review-priority probability* and
+per-feature contributions — an advisory triage aid that **never** changes the
+interpretable rules-based priority and is **never** a guilt/fraud label.
+
+- `ledger.py` records operator outcome labels (`useful_watch`/`missed_event` →
+  positive; `false_positive`/`benign_explained`/`insufficient_evidence` →
+  negative) with each package's feature vector at `out/ledger/labels.jsonl`.
+- `train_model.py` trains from real ledger labels + an optional synthetic
+  bootstrap (price/volume randomized independently of the label to avoid class
+  leakage), reports 5-fold AUC, and **abstains** (model stays out of the way)
+  until ≥40 two-class labeled samples exist.
+- When a trained model is present, every package gets a `model_advisory`
+  (probability + top features); the rules engine remains primary.
+
+On the synthetic bootstrap the model recovers `coordination_score` as the top
+feature — the correct pump discriminator — rather than any leaky proxy.
+
+```bash
+python3 train_model.py            # ledger + synthetic bootstrap
+python3 train_model.py --no-bootstrap   # real ledger labels only
+```
+
+## 14. Roadmap (next, in priority order)
+
+1. Accrue real operator labels in the ledger and retrain (replace synthetic bootstrap).
+2. Per-class precision/recall reporting in the backtest (microcap vs large).
+3. Promoter/issuer enforcement-history feed (SEC litigation releases).
 
 ## 7. Files
 
@@ -275,8 +308,12 @@ secfedclaw_v2/
   edgar_pipeline.py    EDGAR daily-diff ingestion (state watermark, incremental)
   flatfiles.py         Polygon/Massive Flat Files client (stdlib SigV4, day-aggs)
   historical.py        real-data case/control replay through the v0.2 engine
-  features/            market, social (X/Reddit/StockTwits), coordination, official, temporal, edgar
-  tests/               test_v2 (14) + test_edgar (6) + test_flatfiles (5) + test_social (5)
+  social_import.py     authorized Discord/Telegram/JSONL import (opt-in, lawful)
+  ledger.py            operator calibration-label ledger
+  model.py             numpy gradient-boosted review-priority model (advisory)
+  train_model.py       train/cross-validate the model (ledger + synthetic bootstrap)
+  features/            market, social (X/Reddit/StockTwits), coordination, official, temporal, edgar, security_class
+  tests/               test_v2 (14) + edgar (6) + flatfiles (5) + social (5) + security_class (5) + social_import (4) + model (6)
   out/                 generated packages, review_queue, backtest, dashboard, edgar/
   flatfiles/day_aggs/  cached + hashed historical day-aggregate flat files
 ```

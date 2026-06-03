@@ -35,6 +35,8 @@ from features import official as off  # noqa: E402
 from features import temporal as temporal  # noqa: E402
 from features import edgar as edgar_feat  # noqa: E402
 from features import security_class as secclass  # noqa: E402
+import social_import  # noqa: E402
+import model as gbm_model  # noqa: E402
 
 def score_to_priority(score: float) -> str:
     if score >= 75:
@@ -93,6 +95,9 @@ def build_package(ticker: str, fetches: dict[str, Any]) -> dict[str, Any]:
         fetches["x"].data if fetches.get("x") else None,
         fetches["reddit"].data if fetches.get("reddit") else None,
         fetches["stocktwits"].data if fetches.get("stocktwits") else None,
+        imported_posts=(fetches.get("social_import")
+                        if isinstance(fetches.get("social_import"), list)
+                        else social_import.load_authorized(ticker)),
     )
     social_feat = soc.social_features(posts, ticker, reddit_unavailable)
     social_scores = soc.social_scores(social_feat)
@@ -196,6 +201,16 @@ def build_package(ticker: str, fetches: dict[str, Any]) -> dict[str, Any]:
 
     priority = score_to_priority(score)
 
+    # ---- optional model advisory (does NOT change the rules-based priority) ----
+    model_advisory = None
+    _model = gbm_model.load_scorer()
+    if _model:
+        _pseudo = {"component_scores": component_scores, "social_metrics": social_feat,
+                   "anomaly_evidence_score": anomaly_evidence,
+                   "evidence_quality_score": round(ev_quality, 2), "corroboration": corr,
+                   "security_class": {"class": sec_cls["class"]}}
+        model_advisory = gbm_model.score_package(_pseudo, _model)
+
     # ---- benign explanation review (now actuating) ----
     benign = _benign_review(ctx, ts, xs, anomaly_evidence)
     benign_adjusted = False
@@ -223,6 +238,7 @@ def build_package(ticker: str, fetches: dict[str, Any]) -> dict[str, Any]:
             "dollar_volume": round(dollar_volume, 2) if isinstance(dollar_volume, (int, float)) else None,
         },
         "corroboration": corr,
+        "model_advisory": model_advisory,
         "component_scores": {k: component_scores[k] for k in (
             "social_issuer_specific_burst", "social_promotional_noise",
             "market_anomaly_score", "market_structure_score",

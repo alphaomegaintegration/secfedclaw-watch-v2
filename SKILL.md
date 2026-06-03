@@ -58,6 +58,13 @@ It does NOT produce trading signals, accusations, or findings above WATCH.
     class (thin/μcap → small → mid → large) sets z_confirm, routine-context
     floor, and social weight, emitted as `security_class` and shown on the
     dashboard (KPI cards, score-ready %, source-health, class column).
+11. **Authorized Discord/Telegram import** (`social_import.py`) — lawful
+    operator-provided exports only (opt-in `SECFEDCLAW_AUTHORIZED_SOCIAL=1`); no
+    autonomous private-channel scraping.
+12. **Review-priority model + ledger** (`model.py`, `ledger.py`, `train_model.py`)
+    — numpy-only gradient boosting; calibrated advisory probability + feature
+    contributions; abstains until ≥40 two-class operator labels; rules engine
+    stays primary; never a guilt label.
 
 ## Commands
 
