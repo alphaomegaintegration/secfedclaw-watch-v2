@@ -14,7 +14,10 @@
 | `MASSIVE_FLATFILES_ACCESS_KEY_ID` | For historical flat files | S3 access key for Polygon flat files |
 | `MASSIVE_FLATFILES_SECRET_ACCESS_KEY` | For historical flat files | S3 secret key for Polygon flat files |
 | `SEC_USER_AGENT` | For live SEC data | `"Company Name email@example.com"` |
-| `X_BEARER_TOKEN` | For live social data | X/Twitter API bearer token |
+| `X_BEARER_TOKEN` | For live X data | X/Twitter API v2 bearer token |
+| `REDDIT_CLIENT_ID` | For live Reddit data | Reddit app client ID (reddit.com/prefs/apps) |
+| `REDDIT_CLIENT_SECRET` | For live Reddit data | Reddit app client secret |
+| `REDDIT_USER_AGENT` | For live Reddit data | Optional; defaults to `secfedclaw-watch/2.0` |
 | `FIRECRAWL_API_KEY` | For promotion sources | Firecrawl API key |
 
 ## CLI Reference
@@ -56,10 +59,11 @@ python3 dashboard_v2.py    # render out/dashboard_v2.html
 
 ### Tests
 ```bash
-python3 -m pytest tests/ -v              # all 25 tests
+python3 -m pytest tests/ -v              # all 30 tests
 python3 -m pytest tests/test_v2.py -v    # core scoring (14 tests)
 python3 -m pytest tests/test_edgar.py -v # EDGAR pipeline (6 tests)
 python3 -m pytest tests/test_flatfiles.py -v  # flat files (5 tests)
+python3 -m pytest tests/test_social.py -v     # multi-platform social (5 tests)
 ```
 
 ## Operational Modes

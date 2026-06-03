@@ -18,11 +18,12 @@ Orchestrator   → runs the loop per ticker; scan.py runs it across the universe
 ### Currently Wired
 - **Polygon** — aggregates, grouped daily, snapshot, trades, quotes
 - **Polygon Flat Files** — S3-compatible historical day-aggregates via SigV4 (see [Polygon Flat Files Integration](Polygon-Flat-Files-Integration.md))
-- **X (Twitter)** — recent search
+- **X (Twitter)** — recent search (see [Multi-Platform Social Signals](Multi-Platform-Social-Signals.md))
+- **Reddit** — authenticated OAuth (`client_credentials`), finance subreddit search (see [Multi-Platform Social Signals](Multi-Platform-Social-Signals.md))
+- **StockTwits** — public symbol stream with native Bullish/Bearish sentiment (see [Multi-Platform Social Signals](Multi-Platform-Social-Signals.md))
 - **SEC EDGAR** — submissions, companyfacts, companyconcept, FTD, daily-index diff (see [EDGAR Daily-Diff Pipeline](EDGAR-Daily-Diff-Pipeline.md))
 - **FINRA** — OTC threshold, Reg SHO daily, short interest
 - **Nasdaq** — Reg SHO threshold, trade-halts RSS
-- **Reddit** — public JSON (currently 403-blocked)
 
 ### Connection Modes
 Every data source operates in one of three modes:
@@ -42,6 +43,7 @@ The v0.2 composite engine computes review priority through:
 Key design principles:
 - Double-confirmation required (price AND volume) for market anomaly
 - Promo content **deflates** social scores (not inflates)
+- Unanimous bullish sentiment + promo → capped coordination nudge
 - Routine-context floor caps benign tickers to LOW
 - Benign-explanation band reduction for known-explainable moves
 
@@ -50,7 +52,7 @@ Key design principles:
 ```
 features/
   market.py        time-series + cross-sectional anomaly, microstructure
-  social.py        normalize/dedup, issuer-specific vs promo-noise split
+  social.py        multi-platform normalize/dedup, sentiment, cross-platform coordination
   coordination.py  k-shingle Jaccard clustering, shared domains, burst sync
   official.py      FTD/threshold/halt/issuer (any ticker)
   temporal.py      cross-source corroboration multiplier
@@ -71,7 +73,8 @@ out/
 
 ## Test Suite
 
-25 tests across 3 files:
+30 tests across 4 files:
 - `tests/test_v2.py` — 14 tests (robust stats, market, coordination, social, composite)
 - `tests/test_edgar.py` — 6 tests (parsing, features, scoring integration)
 - `tests/test_flatfiles.py` — 5 tests (parsing, signing, market fetches, scoring)
+- `tests/test_social.py` — 5 tests (multi-platform normalization, sentiment, scoring integration)
