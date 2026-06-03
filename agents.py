@@ -64,6 +64,7 @@ class ScoutAgent:
             "halts": c.nasdaq_halts(),
             "submissions": c.sec_submissions(cik) if cik else type("F", (), {"data": None, "mode": "unavailable", "ok": lambda self: False})(),
             "edgar": c.edgar_issuer_features(ticker),
+            "litigation": c.sec_litigation_releases(),
         }
         # Reddit availability depends on OAuth creds + reachability; reflect it.
         fetches["reddit_unavailable"] = not fetches["reddit"].ok()
@@ -121,11 +122,29 @@ class AdversaryAgent:
         return package
 
 
+class ExplainerAgent:
+    """Writes a plain-language WATCH review narrative (LLM if opted in, else
+    a deterministic template). Adds no facts, asserts no wrongdoing, gives no
+    trading advice; LLM output is guardrail-checked or discarded."""
+    role = "explainer"
+
+    def __init__(self, env: dict | None = None):
+        self.env = env
+
+    def explain(self, package: dict[str, Any]) -> dict[str, Any]:
+        import explainer
+        res = explainer.explain(package, env=self.env)
+        package["review_explanation"] = res
+        return package
+
+
 class PackagerAgent:
     role = "packager"
 
     def __init__(self, out_dir: Path | None = None):
-        self.out_dir = out_dir or (fed_claw_root() / "secfedclaw_v2" / "out")
+        # Write next to this package's out/ — the same dir the dashboard reads.
+        # (Avoids a layout-dependent fed_claw_root()/secfedclaw_v2/out mismatch.)
+        self.out_dir = out_dir or (Path(__file__).resolve().parent / "out")
 
     def write(self, package: dict[str, Any]) -> dict[str, Any]:
         self.out_dir.mkdir(parents=True, exist_ok=True)
@@ -155,6 +174,7 @@ class Orchestrator:
         self.scout = ScoutAgent(self.connector)
         self.analyst = AnalystAgent()
         self.adversary = AdversaryAgent()
+        self.explainer = ExplainerAgent(env=self.connector.env)
         self.packager = PackagerAgent(out_dir)
 
     def run(self, ticker: str) -> dict[str, Any]:
@@ -162,6 +182,8 @@ class Orchestrator:
         package = self.analyst.score(ticker, gathered["fetches"])
         package["source_health"] = gathered["source_health"]
         package = self.adversary.review(package)
+        package = self.explainer.explain(package)
         summary = self.packager.write(package)
         summary["source_health"] = gathered["source_health"]
+        summary["explanation_source"] = (package.get("review_explanation") or {}).get("source")
         return summary

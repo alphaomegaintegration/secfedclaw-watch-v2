@@ -107,6 +107,11 @@ python3 scan.py --discover 15                 # + top 15 cross-sectional movers
 python3 scan.py --no-live                      # force replay from custody artifacts
 python3 backtest.py --n 50                     # precision/recall calibration harness
 python3 dashboard_v2.py                        # render out/dashboard_v2.html (offline)
+
+# go live (on a machine with network + the .env credentials):
+python3 preflight.py                           # per-source live readiness (GO/DEGRADED)
+python3 scan.py --live --tickers AAPL AMC GME  # preflight, then scan live
+python3 label.py out/AMC_..._watch_v2.json useful_watch   # feed the calibration ledger
 ```
 
 On your laptop (open network) it runs **live** off the `.env` keys; in a
@@ -148,7 +153,9 @@ should — which lifted precision from 0.65 to 0.71 with no recall loss.
 
 Self-contained offline HTML (inline CSS/JS, **no auto-loaded external resources
 or callbacks**) → `out/dashboard_v2.html`, built on a small consistent design
-system (color/space/type tokens, accessible contrast). Six tabs:
+system (color/space/type tokens, accessible contrast). Eight tabs (Overview,
+Packages, Agents, **Status**, **LLM cost**, Methodology, SEC case studies,
+Backtest):
 
 - **Overview** — operator KPI cards (universe, **score-ready %**, flagged
   ≥MEDIUM, CRITICAL/HIGH, mean anomaly-evidence, mode) + the ranked, filterable
@@ -157,9 +164,14 @@ system (color/space/type tokens, accessible contrast). Six tabs:
   externally on click.
 - **Packages** — evidence cards with component bars, families, caps,
   coordination clusters, the model advisory, and a non-accusatory rationale.
-- **Agents** — the four-agent **orchestration** (Scout→Analyst→Adversary→
-  Packager): the data feeds each pulls, the data-engineering + algorithms it
-  applies, and its output, plus the live/replay data-feed health table.
+- **Agents** — the five-agent **orchestration** (Scout→Analyst→Adversary→
+  Explainer→Packager): the data feeds each pulls, the data-engineering +
+  algorithms it applies, and its output, plus the live/replay data-feed table.
+- **Status** — operational view *from an agent perspective*: each agent's live
+  state, the integrations it depends on, and per-connection live/replay/ok
+  health, plus system KPIs (preflight verdict, model, LLM spend, last run).
+- **LLM cost** — usage & cost ledger (total cost, by model, by component); empty
+  until an LLM-backed component records spend via `usage.record(...)`.
 - **Methodology** — review-priority bands + a full **data dictionary** of every
   metric, and an explicit "what it does NOT do".
 - **SEC case studies** — public SEC matters mapped to *which thresholds fire and
@@ -297,6 +309,28 @@ python3 train_model.py            # ledger + synthetic bootstrap
 python3 train_model.py --no-bootstrap   # real ledger labels only
 ```
 
+## 14. Going live (replay → live)
+
+The engine is **connection-aware**: the same code runs live on a networked
+machine with the `.env` credentials and replays cached custody artifacts
+otherwise. To switch on live:
+
+1. `python3 preflight.py` — probes every source with the real creds and prints a
+   per-source verdict: `GO_LIVE` (core market source reachable), `DEGRADED`
+   (only non-core live), or `REPLAY_ONLY`. No secrets printed; read-only probes.
+2. `python3 scan.py --live …` (or `python3 pipeline.py`) — runs preflight, then
+   scans with `prefer_live=True`. Sources that aren't reachable degrade to
+   cached replay individually, and the per-ticker `source_health` shows which.
+3. **Live custody:** every successful live response is persisted (raw + SHA256)
+   under `live_cache/<UTC>/`, so a live package is as reproducible/auditable as a
+   replayed one (SOUL evidence discipline). `flatfiles/day_aggs/` caches history.
+4. **Feedback loop:** label reviewed packages with `python3 label.py … <label>`
+   and `python3 train_model.py` to recalibrate as real labels accrue.
+
+Credentials used live: `POLYGON_API_KEY`, `X_BEARER_TOKEN`/`TWITTER_BEARER_TOKEN`,
+`SEC_USER_AGENT`, `MASSIVE_FLATFILES_*`, and (optional) `REDDIT_CLIENT_ID`/
+`REDDIT_CLIENT_SECRET`. StockTwits/FINRA/Nasdaq need none.
+
 ### Schedule a daily live run (`daily.py`, `deploy/`)
 
 `daily.py` is a lock-protected, logged once-per-day pass: preflight → EDGAR
@@ -340,7 +374,37 @@ possible but prints a warning. Publishing to a public host (e.g. GitHub Pages)
 is **not recommended** and is left entirely to the operator. If no URL is set,
 the digest links to the local `file://` path instead.
 
-## 15. Roadmap (next, in priority order)
+## 15. Enforcement history, per-class calibration, agent status & LLM cost
+
+- **Enforcement-history family** (`features/enforcement.py`) — parses the SEC
+  litigation-releases feed and flags when the ticker/issuer appears in recent
+  actions. **Backward-looking context** (family E): it raises review attention
+  and is a corroborating family, but never implies current misconduct; matched
+  releases are emitted for verification.
+- **Per-class backtest** (`backtest.py per_class_breakdown`) — precision/recall
+  by liquidity class on a class-balanced corpus. Observed: small-cap P≈1.0,
+  thin/microcap P≈0.3 at recall 1.0 — microcaps are tuned for high recall (don't
+  miss pumps) at the cost of precision (more benign windows surface). Shown on
+  the Backtest tab.
+- **Agent status** (`agent_status.py` + Status tab) — per-agent live state, the
+  integrations each depends on, and per-connection live/replay/ok health.
+- **LLM usage & cost** (`usage.py` + LLM-cost tab) — a dependency-free ledger any
+  LLM-using component records to (`usage.record(model, in_tok, out_tok, component)`),
+  with a configurable pricing table and cost aggregation by model/component/day.
+- **LLM explanation agent** (`explainer.py`, the 5th agent) — writes a 3–5
+  sentence plain-language review summary grounded ONLY in the package evidence.
+  Off by default (deterministic template); set `SECFEDCLAW_LLM_EXPLAIN=1` to use
+  an LLM (OpenRouter or Anthropic from `.env`). A guardrail rejects any output
+  with fraud/accusation/trading language (falls back to the template), every
+  summary ends with the WATCH disclaimer, and each LLM call is cost-tracked via
+  `usage.py` (so the LLM-cost tab populates). Shown as "Review summary" on each
+  package card.
+- **Live data through the agents** — live is the default (`scan.py --live`);
+  `tests/test_live_flow.py` injects a mock live transport and proves data flows
+  Scout→Analyst→Adversary→Packager with custody persistence. Real live runs use
+  the operator's network + `.env`.
+
+## 16. Roadmap (next, in priority order)
 
 1. Accrue real operator labels in the ledger and retrain (replace synthetic bootstrap).
 2. Per-class precision/recall reporting in the backtest (microcap vs large).
@@ -368,12 +432,17 @@ secfedclaw_v2/
   ledger.py            operator calibration-label ledger
   model.py             numpy gradient-boosted review-priority model (advisory)
   train_model.py       train/cross-validate the model (ledger + synthetic bootstrap)
+  preflight.py         per-source live-readiness check (GO/DEGRADED/REPLAY)
+  label.py             operator labeling CLI for the calibration ledger
   daily.py             scheduled daily run (lock, preflight→edgar→scan→backtest→dashboard→digest)
   notify.py            daily WATCH digest (Telegram, file fallback, dashboard deep-link)
   serve.py             localhost static server to view/publish the dashboard
+  usage.py             LLM usage & cost ledger (recorder + pricing + summary)
+  agent_status.py      per-agent + integration status assembler
+  explainer.py         LLM-backed review-summary agent (template fallback + guardrails)
   deploy/              launchd plist + cron + schedule_install.sh
-  features/            market, social (X/Reddit/StockTwits), coordination, official, temporal, edgar, security_class
-  tests/               test_v2 (14) + edgar (6) + flatfiles (5) + social (5) + security_class (4) + social_import (6) + model (6) + daily (2)
+  features/            market, social (X/Reddit/StockTwits), coordination, official, temporal, edgar, security_class, enforcement
+  tests/               14 suites, ~72 tests (incl. enforcement, usage, live_flow)
   out/                 generated packages, review_queue, backtest, dashboard, edgar/
   flatfiles/day_aggs/  cached + hashed historical day-aggregate flat files
 ```

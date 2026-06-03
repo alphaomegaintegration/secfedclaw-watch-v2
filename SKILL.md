@@ -65,7 +65,11 @@ It does NOT produce trading signals, accusations, or findings above WATCH.
     — numpy-only gradient boosting; calibrated advisory probability + feature
     contributions; abstains until ≥40 two-class operator labels; rules engine
     stays primary; never a guilt label.
-
+13. **Go-live tooling** (`preflight.py`, `label.py`) — `preflight.py` reports
+    per-source live readiness (GO_LIVE / DEGRADED / REPLAY_ONLY) with real
+    creds; `scan.py --live` runs it then scans live; live responses persist to
+    `live_cache/<UTC>/` (raw + SHA256) for custody; `label.py` records operator
+    outcomes into the ledger to drive retraining.
 14. **Scheduled daily run** (`daily.py`, `deploy/`) — lock-protected, logged
     once-per-day pass (preflight→EDGAR→scan→backtest→dashboard→digest) writing
     `out/daily_run_summary.json`; install via launchd (`deploy/schedule_install.sh`)
@@ -76,6 +80,18 @@ It does NOT produce trading signals, accusations, or findings above WATCH.
 16. **Dashboard serving** (`serve.py`) — localhost-bound static server for the
     self-contained dashboard; set `SECFEDCLAW_DASHBOARD_URL` so the digest links
     to it. Public exposure is an explicit operator choice (WATCH content).
+17. **Enforcement-history family** (`features/enforcement.py`) — SEC litigation
+    feed match; backward-looking corroborating context, never current proof.
+18. **Per-class backtest** (`backtest.per_class_breakdown`) — precision/recall by
+    liquidity class on a class-balanced corpus (Backtest tab).
+19. **Agent status + LLM cost** (`agent_status.py`, `usage.py`) — Status tab
+    (per-agent state, integrations, connections) and LLM-cost tab (usage ledger,
+    pricing, cost by model/component). `test_live_flow.py` proves data flows
+    through the agents in live mode with custody.
+20. **LLM explanation agent** (`explainer.py`, 5th agent) — plain-language review
+    summary grounded only in package evidence; off by default (template), opt in
+    with `SECFEDCLAW_LLM_EXPLAIN=1` (OpenRouter/Anthropic). Guardrail rejects
+    fraud/accusation/trading language; calls are cost-tracked via `usage.py`.
 
 ## Commands
 

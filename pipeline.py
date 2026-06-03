@@ -31,9 +31,13 @@ def main() -> int:
     ap.add_argument("--bt-n", type=int, default=50)
     args = ap.parse_args()
 
+    if not args.no_live:
+        _run(["preflight.py"])
     scan = ["scan.py", "--tickers", *args.tickers, "--discover", str(args.discover)]
     if args.no_live:
         scan.append("--no-live")
+    else:
+        scan.append("--live")
     _run(scan)
     _run(["backtest.py", "--n", str(args.bt_n)])
     _run(["dashboard_v2.py"])

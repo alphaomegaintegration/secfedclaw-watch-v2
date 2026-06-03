@@ -63,6 +63,31 @@ class DataConnector:
         self.artifacts = self.root / "artifacts"
         self.collections = self.root / "collections"
 
+    # ---- live custody: persist raw responses + sha256 -------------------
+    def _live(self, name: str, status: int | None, data: Any, url: str | None = None,
+              note: str = "") -> "Fetch":
+        """Wrap a successful LIVE response, persisting it for custody/replay."""
+        path = sha = None
+        try:
+            import time as _t
+            if getattr(self, "_lrd", None) is None:
+                self._lrd = self.root / "live_cache" / _t.strftime("%Y%m%dT%H%M%SZ", _t.gmtime())
+            self._lrd.mkdir(parents=True, exist_ok=True)
+            if isinstance(data, (bytes, bytearray)):
+                raw = bytes(data)
+            elif isinstance(data, str):
+                raw = data.encode()
+            else:
+                raw = json.dumps(data, default=str).encode()
+            p = self._lrd / f"{name}.json"
+            p.write_bytes(raw)
+            path, sha = str(p), sha256_bytes(raw)
+        except Exception:
+            pass
+        return Fetch(name=name, mode="live", status=status, data=data,
+                     artifact_path=path, sha256=sha,
+                     source_url_redacted=redact(url) if url else None, note=note or "live (persisted to live_cache)")
+
     # ---- live HTTP (graceful) ------------------------------------------
     def _http_json(self, url: str, headers: dict[str, str] | None = None) -> tuple[int | None, Any]:
         try:
@@ -130,8 +155,7 @@ class DataConnector:
                    f"{start}/{end}?adjusted=true&sort=asc&limit=400&apiKey={pk}")
             status, data = self._http_json(url)
             if status == 200 and data:
-                return Fetch(name=f"polygon_daily_range_{ticker}", mode="live", status=status, data=data,
-                             source_url_redacted=redact(url), note=f"{days}d daily aggregates")
+                return self._live(f"polygon_daily_range_{ticker}", status, data, url, note=f"{days}d daily aggregates")
         # replay: single/multi-day custom aggs cached per ticker
         return self._replay(f"polygon_daily_range_{ticker}",
                             f"*custom_day_aggs_{ticker.lower()}*.json",
@@ -144,8 +168,7 @@ class DataConnector:
             url = f"https://api.polygon.io/v2/aggs/ticker/{ticker}/prev?adjusted=true&apiKey={pk}"
             status, data = self._http_json(url)
             if status == 200 and data:
-                return Fetch(name=f"polygon_prev_{ticker}", mode="live", status=status, data=data,
-                             source_url_redacted=redact(url))
+                return self._live(f"polygon_prev_{ticker}", status, data, url)
         return self._replay(f"polygon_prev_{ticker}", f"*/polygon_prev_{ticker}.json", f"*prev_aggregate_{ticker.lower()}*.json")
 
     def polygon_grouped_daily(self) -> Fetch:
@@ -156,8 +179,7 @@ class DataConnector:
             url = f"https://api.polygon.io/v2/aggs/grouped/locale/us/market/stocks/{day}?adjusted=true&apiKey={pk}"
             status, data = self._http_json(url)
             if status == 200 and data:
-                return Fetch(name="polygon_grouped_daily", mode="live", status=status, data=data,
-                             source_url_redacted=redact(url))
+                return self._live("polygon_grouped_daily", status, data, url)
         return self._replay("polygon_grouped_daily", "*grouped_daily*.json", "*grouped_daily_market*.json")
 
     def polygon_snapshot(self, ticker: str) -> Fetch:
@@ -167,8 +189,7 @@ class DataConnector:
             url = f"https://api.polygon.io/v2/snapshot/locale/us/markets/stocks/tickers/{ticker}?apiKey={pk}"
             status, data = self._http_json(url)
             if status == 200 and data:
-                return Fetch(name=f"polygon_snapshot_{ticker}", mode="live", status=status, data=data,
-                             source_url_redacted=redact(url))
+                return self._live(f"polygon_snapshot_{ticker}", status, data, url)
         return self._replay(f"polygon_snapshot_{ticker}", f"*/polygon_snapshot_{ticker}.json", f"*snapshot_single_{ticker.lower()}*.json")
 
     def polygon_trades(self, ticker: str) -> Fetch:
@@ -189,8 +210,7 @@ class DataConnector:
                        f"&max_results=25&tweet.fields=public_metrics,created_at,author_id,entities")
                 status, data = self._http_json(url, {"Authorization": f"Bearer {bearer}"})
                 if status == 200 and data:
-                    return Fetch(name=f"x_recent_{ticker}", mode="live", status=status, data=data,
-                                 source_url_redacted=redact(url))
+                    return self._live(f"x_recent_{ticker}", status, data, url)
         return self._replay(f"x_recent_{ticker}", f"*/x_recent_search_{ticker}.json", f"*x_recent_search*{ticker.lower()}*.json")
 
     def reddit_oauth(self, ticker: str, subreddits: list[str] | None = None) -> Fetch:
@@ -213,8 +233,7 @@ class DataConnector:
                        f"&restrict_sr=on&sort=new&limit=50&t=week")
                 status, data = self._http_json(url, {"Authorization": f"bearer {token}", "User-Agent": ua})
                 if status == 200 and data:
-                    return Fetch(name=f"reddit_{ticker}", mode="live", status=status, data=data,
-                                 source_url_redacted=redact(url), note=f"reddit oauth search r/{subs}")
+                    return self._live(f"reddit_{ticker}", status, data, url, note=f"reddit oauth r/{subs}")
         return self._replay(f"reddit_{ticker}", f"*/reddit_*{ticker}*.json", f"*reddit*{ticker.lower()}*.json",
                             note="reddit unavailable; set REDDIT_CLIENT_ID/SECRET for live OAuth")
 
@@ -243,8 +262,7 @@ class DataConnector:
             url = f"https://api.stocktwits.com/api/2/streams/symbol/{ticker}.json"
             status, data = self._http_json(url, {"User-Agent": "secfedclaw-watch/2.0"})
             if status == 200 and data:
-                return Fetch(name=f"stocktwits_{ticker}", mode="live", status=status, data=data,
-                             source_url_redacted=url, note="stocktwits symbol stream")
+                return self._live(f"stocktwits_{ticker}", status, data, url, note="stocktwits symbol stream")
         return self._replay(f"stocktwits_{ticker}", f"*/stocktwits_*{ticker}*.json", f"*stocktwits*{ticker.lower()}*.json",
                             note="stocktwits unavailable offline")
 
@@ -254,8 +272,7 @@ class DataConnector:
             url = f"https://data.sec.gov/submissions/CIK{cik10}.json"
             status, data = self._http_json(url, {"User-Agent": ua})
             if status == 200 and data:
-                return Fetch(name=f"sec_submissions_{cik10}", mode="live", status=status, data=data,
-                             source_url_redacted=url)
+                return self._live(f"sec_submissions_{cik10}", status, data, url)
         return self._replay(f"sec_submissions_{cik10}", "*/sec_aapl_submissions.json", "*sec_aapl_submissions*")
 
     def finra_otc_threshold(self) -> Fetch:
@@ -267,6 +284,17 @@ class DataConnector:
     def reg_sho_threshold(self) -> Fetch:
         return self._replay("reg_sho_threshold", "*/nasdaq_reg_sho_*_sample.json")
 
+    def sec_litigation_releases(self) -> Fetch:
+        """SEC litigation-releases RSS feed (enforcement history). Live or replay."""
+        ua = self.env.get("SEC_USER_AGENT", "secfedclaw research robert.david.brown@gmail.com")
+        url = "https://www.sec.gov/rss/litigation/litreleases.xml"
+        if self.live_available_sec(ua):
+            status, data = self._http_text(url, {"User-Agent": ua})
+            if status == 200 and data:
+                return self._live("sec_litigation_releases", status, data, url, note="SEC litigation RSS")
+        return self._replay("sec_litigation_releases", "*litigation*release*.xml", "*litreleases*",
+                            note="enforcement feed unavailable offline")
+
     # ---- EDGAR daily-diff pipeline sources ------------------------------
     def sec_daily_index(self, day: str) -> Fetch:
         """SEC daily-index master file (pipe-delimited) for a YYYY-MM-DD day."""
@@ -277,8 +305,7 @@ class DataConnector:
         if self.live_available_sec(ua):
             status, data = self._http_text(url, {"User-Agent": ua})
             if status == 200 and data:
-                return Fetch(name=f"sec_daily_index_{day}", mode="live", status=status, data=data,
-                             source_url_redacted=url, note="SEC daily-index master.idx")
+                return self._live(f"sec_daily_index_{day}", status, data, url, note="SEC daily-index master.idx")
         # replay: a cached daily index if the operator saved one
         return self._replay(f"sec_daily_index_{day}", f"*daily_index*{y}{m}{d}*",
                             "*sec_daily_index*", note="cached daily index (if present)")
@@ -289,7 +316,7 @@ class DataConnector:
             status, data = self._http_json("https://www.sec.gov/files/company_tickers.json",
                                            {"User-Agent": ua})
             if status == 200 and data:
-                return Fetch(name="sec_company_tickers", mode="live", status=status, data=data)
+                return self._live("sec_company_tickers", status, data, "https://www.sec.gov/files/company_tickers.json")
         return self._replay("sec_company_tickers", "*/sec_company_tickers.json", "*sec_company_tickers*")
 
     def edgar_issuer_features(self, ticker: str) -> Fetch:
