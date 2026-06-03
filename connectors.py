@@ -267,6 +267,17 @@ class DataConnector:
     def reg_sho_threshold(self) -> Fetch:
         return self._replay("reg_sho_threshold", "*/nasdaq_reg_sho_*_sample.json")
 
+    def sec_litigation_releases(self) -> Fetch:
+        """SEC litigation-releases RSS feed (enforcement history). Live or replay."""
+        ua = self.env.get("SEC_USER_AGENT", "secfedclaw research robert.david.brown@gmail.com")
+        url = "https://www.sec.gov/rss/litigation/litreleases.xml"
+        if self.live_available_sec(ua):
+            status, data = self._http_text(url, {"User-Agent": ua})
+            if status == 200 and data:
+                return self._live("sec_litigation_releases", status, data, url, note="SEC litigation RSS")
+        return self._replay("sec_litigation_releases", "*litigation*release*.xml", "*litreleases*",
+                            note="enforcement feed unavailable offline")
+
     # ---- EDGAR daily-diff pipeline sources ------------------------------
     def sec_daily_index(self, day: str) -> Fetch:
         """SEC daily-index master file (pipe-delimited) for a YYYY-MM-DD day."""

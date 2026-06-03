@@ -38,6 +38,10 @@ def corroboration(component_scores: dict[str, float],
     # EDGAR issuer-event family: insiders/issuer selling or diluting into demand.
     if component_scores.get("issuer_event_score", 0) >= 30:
         families_active.append("issuer_event")
+    # Enforcement-history family: prior SEC action references this issuer/ticker
+    # (backward-looking context that raises review attention, not current proof).
+    if component_scores.get("enforcement_history_score", 0) >= 30:
+        families_active.append("enforcement_history")
 
     n = len(families_active)
     # Corroboration multiplier applied to the concern-bearing anomaly-evidence

@@ -76,6 +76,14 @@ It does NOT produce trading signals, accusations, or findings above WATCH.
 16. **Dashboard serving** (`serve.py`) — localhost-bound static server for the
     self-contained dashboard; set `SECFEDCLAW_DASHBOARD_URL` so the digest links
     to it. Public exposure is an explicit operator choice (WATCH content).
+17. **Enforcement-history family** (`features/enforcement.py`) — SEC litigation
+    feed match; backward-looking corroborating context, never current proof.
+18. **Per-class backtest** (`backtest.per_class_breakdown`) — precision/recall by
+    liquidity class on a class-balanced corpus (Backtest tab).
+19. **Agent status + LLM cost** (`agent_status.py`, `usage.py`) — Status tab
+    (per-agent state, integrations, connections) and LLM-cost tab (usage ledger,
+    pricing, cost by model/component). `test_live_flow.py` proves data flows
+    through the agents in live mode with custody.
 
 ## Commands
 

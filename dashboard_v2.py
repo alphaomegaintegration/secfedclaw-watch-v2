@@ -16,9 +16,14 @@ from __future__ import annotations
 import argparse
 import html
 import json
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import agent_status as agentstatus  # noqa: E402
+import usage as usage_mod  # noqa: E402
 
 OUT = Path(__file__).resolve().parent / "out"
 
@@ -42,6 +47,7 @@ DEFS = {
     "market_structure_score": "FINRA/Nasdaq context: Reg SHO threshold, OTC threshold, short-sale volume. Context only, not proof of naked shorting.",
     "security_class": "Liquidity class (thin/microcap → small → mid → large) that calibrates thresholds: microcaps are more sensitive, large caps need stronger confirmation.",
     "model_advisory": "Optional calibrated review-priority probability from the gradient-boosted model. Advisory only — it never changes the rules-based priority and is never a guilt label.",
+    "enforcement_history_score": "Whether the ticker/issuer appears in recent SEC litigation releases. BACKWARD-LOOKING context that raises review attention — never proof of current misconduct.",
 }
 
 
@@ -165,8 +171,8 @@ def package_cards(packages: list[dict[str, Any]]) -> str:
     for p in sorted(packages, key=lambda d: d.get("watch_score", 0), reverse=True)[:24]:
         comp = p.get("component_scores", {})
         order = ["market_anomaly_score", "coordination_score", "issuer_event_score",
-                 "market_structure_score", "halt_regulatory_score", "issuer_context_score",
-                 "social_issuer_specific_burst", "social_promotional_noise"]
+                 "enforcement_history_score", "market_structure_score", "halt_regulatory_score",
+                 "issuer_context_score", "social_issuer_specific_burst", "social_promotional_noise"]
         comp_rows = "".join(
             f'<tr><td>{esc(k.replace("_"," "))} {info(k)}</td><td>{bar(comp.get(k,0))}</td></tr>'
             for k in order if k in comp)
@@ -193,6 +199,9 @@ def package_cards(packages: list[dict[str, Any]]) -> str:
             f'(×{corr.get("corroboration_multiplier","?")})</p>'
             f'<p class="small"><b>Caps:</b> {esc("; ".join(caps))}</p>'
             + (f'<p class="small warn"><b>Coordination:</b> {len(clusters)} near-duplicate cluster(s)</p>' if clusters else "")
+            + (f'<p class="small enf"><b>Enforcement history (backward-looking):</b> '
+               f'{len((p.get("enforcement_history") or {}).get("matched_releases", []))} prior release(s) referenced</p>'
+               if (p.get("enforcement_history") or {}).get("matched_releases") else "")
             + ma_html
             + f'<p class="small adv"><b>Adversary:</b> {esc("; ".join(adv[:2]))}</p>'
             f'<p class="small rationale">{esc(p.get("non_accusatory_rationale",""))}</p></div>')
@@ -333,6 +342,77 @@ def case_studies_panel() -> str:
     return intro + worked + '<div class="cases">' + cards + '</div>'
 
 
+def _state_dot(state: str) -> str:
+    cls = {"live": "ok", "ok": "ok", "replay": "warn-d", "degraded": "warn-d",
+           "unavailable": "bad", "idle": "idle"}.get(state, "idle")
+    return f'<span class="dot {cls}"></span>{esc(state)}'
+
+
+def agent_status_panel(queue: dict[str, Any]) -> str:
+    st = agentstatus.build(queue)
+    sysd = st["system"]
+    sys_cards = [
+        ("Preflight", sysd["preflight_verdict"], "live readiness"),
+        ("Data mode", sysd["data_mode"], "live or replay"),
+        ("Integrations live", f'{sysd["integrations_live"]}/{sysd["integrations_total"]}', "feeds reachable"),
+        ("Model", "trained" if st["model"]["trained"] else "abstaining", f'{st["model"]["n_labels"]} labels'),
+        ("LLM spend", f'${st["llm"]["total_cost_usd"]:.2f}', f'{st["llm"]["n_calls"]} calls'),
+        ("Last run", (sysd["last_run_utc"] or "—")[:16].replace("T", " "), "UTC"),
+    ]
+    kpis = "".join(f'<div class="kpi"><div class="kpi-num">{esc(v)}</div><div class="kpi-lbl">{esc(l)}</div>'
+                   f'<div class="kpi-sub">{esc(s)}</div></div>' for l, v, s in sys_cards)
+    agents = "".join(
+        f'<div class="stage"><div class="stage-num">{esc(a["name"])}</div>'
+        f'<div class="agent-state">{_state_dot(a["state"])}</div>'
+        f'<p class="small">{esc(a["role"])}</p>'
+        f'<p class="small out"><b>Depends on:</b> {esc(", ".join(a["depends_on"][:6]))}'
+        f'{"…" if len(a["depends_on"])>6 else ""}</p></div>'
+        for a in st["agents"])
+    integ = "".join(
+        f'<tr><td>{esc(i["integration"])}</td><td>{_state_dot(i["state"])}</td>'
+        f'<td class="num">{i["ok"]}/{i["total"]}</td><td class="num">{i["live"]}</td>'
+        f'<td class="num">{i["replay"]}</td><td class="num">{i["unavailable"]}</td></tr>'
+        for i in st["integrations"]) or '<tr><td colspan="6" class="muted">No integration health yet — run a scan.</td></tr>'
+    return (
+        '<p class="intro">Operational status from an agent perspective: each agent\'s live state, the integrations it '
+        'depends on, and per-connection live/replay health. Run <code>scan.py --live</code> to populate live status.</p>'
+        f'<div class="kpis">{kpis}</div>'
+        f'<div class="card"><h3>Agents</h3><div class="pipeline">{agents}</div></div>'
+        '<div class="card"><h3>Integrations &amp; connections</h3>'
+        '<table class="mini"><thead><tr><th>integration</th><th>state</th><th class="num">ok</th>'
+        '<th class="num">live</th><th class="num">replay</th><th class="num">unavail</th></tr></thead>'
+        f'<tbody>{integ}</tbody></table>'
+        '<p class="small muted">live = fetched from the source this run · replay = cached custody artifact · '
+        'unavailable = no data (degrades that family, never fabricates).</p></div>')
+
+
+def llm_cost_panel() -> str:
+    s = usage_mod.summary()
+    if not s.get("n_calls"):
+        return ('<p class="intro">Tracks LLM usage &amp; cost across the system. The v0.2 scoring core is rules + '
+                'numpy (no LLM calls), so this is empty until an LLM-backed component records spend via '
+                '<code>usage.record(...)</code> — e.g. a future LLM explanation/adversary agent or the Haiku digest. '
+                'Prices are configurable in <code>out/usage/pricing.json</code>.</p>'
+                '<div class="card"><h3>No LLM usage recorded yet</h3>'
+                '<p class="small muted">Record a call: <code>python3 usage.py --record claude-haiku-4.5 1200 300 --component digest</code></p></div>')
+    kpis = "".join(f'<div class="kpi"><div class="kpi-num">{esc(v)}</div><div class="kpi-lbl">{esc(l)}</div></div>'
+                   for l, v in [("Total cost", f'${s["total_cost_usd"]:.2f}'), ("Calls", s["n_calls"]),
+                                ("Input tok", f'{s["total_input_tokens"]:,}'), ("Output tok", f'{s["total_output_tokens"]:,}')])
+    mrows = "".join(f'<tr><td>{esc(k)}</td><td class="num">{v["calls"]}</td>'
+                    f'<td class="num">{v["input_tokens"]:,}</td><td class="num">{v["output_tokens"]:,}</td>'
+                    f'<td class="num">${v["cost_usd"]:.4f}</td></tr>' for k, v in s["by_model"].items())
+    crows = "".join(f'<tr><td>{esc(k or "—")}</td><td class="num">{v["calls"]}</td><td class="num">${v["cost_usd"]:.4f}</td></tr>'
+                    for k, v in s["by_component"].items())
+    warn = '<p class="small warn">Some calls used an unknown model price (counted at $0). Add it to out/usage/pricing.json.</p>' if s.get("any_unknown_pricing") else ""
+    return (
+        f'<div class="kpis">{kpis}</div>{warn}'
+        '<div class="grid2">'
+        f'<div class="card"><h3>By model</h3><table class="mini"><thead><tr><th>model</th><th class="num">calls</th>'
+        f'<th class="num">in</th><th class="num">out</th><th class="num">cost</th></tr></thead><tbody>{mrows}</tbody></table></div>'
+        f'<div class="card"><h3>By component</h3><table class="mini"><thead><tr><th>component</th><th class="num">calls</th>'
+        f'<th class="num">cost</th></tr></thead><tbody>{crows}</tbody></table></div></div>')
+
+
 def backtest_panel(bt: dict[str, Any]) -> str:
     if not bt:
         return '<p class="muted">No backtest results. Run backtest.py.</p>'
@@ -343,6 +423,18 @@ def backtest_panel(bt: dict[str, Any]) -> str:
               f'<tr><td><b>pump</b></td><td class="num tp">{cm.get("tp",0)} TP</td><td class="num fn">{cm.get("fn",0)} FN</td></tr>'
               f'<tr><td><b>benign/control</b></td><td class="num fp">{cm.get("fp",0)} FP</td><td class="num tn">{cm.get("tn",0)} TN</td></tr>')
     led = "".join(f'<tr><td>{esc(k)}</td><td class="num">{v}</td></tr>' for k, v in ledger.items())
+    pc = bt.get("per_class", {})
+    pcrows = "".join(
+        f'<tr><td>{esc(CLASS_ABBR.get(k,k))}</td><td class="num">{v.get("precision",0):.2f}</td>'
+        f'<td class="num">{v.get("recall",0):.2f}</td><td class="num">{v.get("f1",0):.2f}</td>'
+        f'<td class="num">{v.get("n",0)}</td></tr>' for k, v in pc.items())
+    pc_html = (f'<div class="card"><h3>Precision / recall by liquidity class '
+               '<span class="muted small">(class-balanced corpus)</span></h3>'
+               '<table class="mini"><thead><tr><th>class</th><th class="num">P</th><th class="num">R</th>'
+               f'<th class="num">F1</th><th class="num">n</th></tr></thead><tbody>{pcrows}</tbody></table>'
+               '<p class="small muted">Microcaps are tuned for high recall (don\'t miss pumps) at the cost of '
+               'precision (more benign windows surface for review) — a deliberate, class-aware trade-off.</p></div>'
+               if pcrows else "")
     return (
         '<p class="intro">Does the engine raise review priority on pump windows while staying quiet on benign-news and '
         'routine windows? Measured on a seeded synthetic corpus (real SEC-case windows when run live with Flat Files).</p>'
@@ -350,7 +442,8 @@ def backtest_panel(bt: dict[str, Any]) -> str:
         f'<p class="muted small">{bt.get("n_samples",0)} windows ({bt.get("n_per_class",0)}/class) · flag ≥ {esc(bt.get("flag_threshold"))} · seed {bt.get("seed")}</p>'
         '<div class="grid2">'
         f'<div class="card"><h3>Confusion matrix</h3><table class="mini cm"><tbody>{cmrows}</tbody></table></div>'
-        f'<div class="card"><h3>Calibration ledger</h3><table class="mini"><tbody>{led}</tbody></table></div></div>')
+        f'<div class="card"><h3>Calibration ledger</h3><table class="mini"><tbody>{led}</tbody></table></div></div>'
+        f'{pc_html}')
 
 
 CSS = """
@@ -408,7 +501,10 @@ thead th{color:var(--muted);font-size:11.5px;text-transform:uppercase;letter-spa
 .cm .tp{color:#7ee787}.cm .tn{color:#9cd2ff}.cm .fp{color:#ffba73}.cm .fn{color:#ff9ba0}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:var(--s4)} @media(max-width:760px){.grid2{grid-template-columns:1fr}}
 .pkg-head{display:flex;align-items:center;gap:var(--s3);flex-wrap:wrap;margin-bottom:var(--s2)}
-.warn{color:#ffba73}.adv{color:#9cd2ff}.model{color:#b39ddb}.rationale{color:#aeb8cc;border-top:1px dashed var(--line);padding-top:var(--s2);margin-top:var(--s2)}
+.warn{color:#ffba73}.adv{color:#9cd2ff}.model{color:#b39ddb}.enf{color:#e0a3c9}.rationale{color:#aeb8cc;border-top:1px dashed var(--line);padding-top:var(--s2);margin-top:var(--s2)}
+.dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px;vertical-align:middle}
+.dot.ok{background:var(--ok)}.dot.warn-d{background:var(--high)}.dot.bad{background:var(--crit)}.dot.idle{background:var(--low)}
+.agent-state{font-size:12px;font-weight:700;margin:2px 0 6px}
 .pipeline{display:flex;align-items:stretch;gap:var(--s2);flex-wrap:wrap;margin-bottom:var(--s4)}
 .stage{flex:1;min-width:200px;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:var(--s4);position:relative}
 .stage-num{font-size:11px;font-weight:800;color:var(--brand);letter-spacing:1px}
@@ -446,8 +542,9 @@ def build_html(queue: dict, packages: list, bt: dict) -> str:
     mode = queue.get("data_mode", "?")
     n_pkg = len([p for p in packages if p])
     tabs = (_tab("Overview", "overview", True) + _tab("Packages", "packages")
-            + _tab("Agents", "agents") + _tab("Methodology", "methodology")
-            + _tab("SEC case studies", "cases") + _tab("Backtest", "backtest"))
+            + _tab("Agents", "agents") + _tab("Status", "status") + _tab("LLM cost", "llm")
+            + _tab("Methodology", "methodology") + _tab("SEC case studies", "cases")
+            + _tab("Backtest", "backtest"))
     return (
         "<!doctype html><html lang='en'><head><meta charset='utf-8'>"
         "<meta name='viewport' content='width=device-width,initial-scale=1'>"
@@ -477,6 +574,10 @@ def build_html(queue: dict, packages: list, bt: dict) -> str:
         f"{package_cards([p for p in packages if p])}</section>"
         # agents
         f"<section id='agents' class='panel'><h2>Agents &amp; orchestration</h2>{agents_panel(queue)}</section>"
+        # status
+        f"<section id='status' class='panel'><h2>Agent &amp; integration status</h2>{agent_status_panel(queue)}</section>"
+        # llm cost
+        f"<section id='llm' class='panel'><h2>LLM usage &amp; cost</h2>{llm_cost_panel()}</section>"
         # methodology
         f"<section id='methodology' class='panel'><h2>Methodology &amp; data dictionary</h2>{methodology_panel()}</section>"
         # cases

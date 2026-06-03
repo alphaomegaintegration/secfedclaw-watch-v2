@@ -64,6 +64,7 @@ class ScoutAgent:
             "halts": c.nasdaq_halts(),
             "submissions": c.sec_submissions(cik) if cik else type("F", (), {"data": None, "mode": "unavailable", "ok": lambda self: False})(),
             "edgar": c.edgar_issuer_features(ticker),
+            "litigation": c.sec_litigation_releases(),
         }
         # Reddit availability depends on OAuth creds + reachability; reflect it.
         fetches["reddit_unavailable"] = not fetches["reddit"].ok()

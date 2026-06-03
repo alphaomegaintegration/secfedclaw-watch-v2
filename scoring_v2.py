@@ -35,6 +35,7 @@ from features import official as off  # noqa: E402
 from features import temporal as temporal  # noqa: E402
 from features import edgar as edgar_feat  # noqa: E402
 from features import security_class as secclass  # noqa: E402
+from features import enforcement as enf  # noqa: E402
 import social_import  # noqa: E402
 import model as gbm_model  # noqa: E402
 
@@ -122,6 +123,12 @@ def build_package(ticker: str, fetches: dict[str, Any]) -> dict[str, Any]:
     )
     off_scores = off.official_scores(ctx)
 
+    # ---- SEC enforcement-history (backward-looking context, family E) ----
+    lit_fetch = fetches.get("litigation")
+    lit_items = enf.parse_releases(lit_fetch.data) if (lit_fetch and getattr(lit_fetch, "data", None) and isinstance(lit_fetch.data, str)) else []
+    enf_matched = enf.match_releases(lit_items, ticker, ctx.get("issuer_name")) if lit_items else []
+    enforcement_score_val, enforcement_basis = enf.enforcement_score(enf_matched)
+
     # ---- EDGAR issuer-event signal (concern-bearing) ----
     edgar_fetch = fetches.get("edgar")
     edgar_payload = edgar_fetch.data if (edgar_fetch and hasattr(edgar_fetch, "data")) else None
@@ -138,6 +145,7 @@ def build_package(ticker: str, fetches: dict[str, Any]) -> dict[str, Any]:
         "halt_regulatory_score": off_scores["halt_regulatory_score"],
         "coordination_score": round(coordination_score, 2),
         "issuer_event_score": round(issuer_event_val, 2),
+        "enforcement_history_score": round(enforcement_score_val, 2),
     }
 
     # ---- concern-bearing anomaly evidence (separate from reviewability) ----
@@ -159,7 +167,9 @@ def build_package(ticker: str, fetches: dict[str, Any]) -> dict[str, Any]:
     # add a small issuer-context bonus. Avoids both v0.1's routine-context
     # floor AND a pure weighted-average that dilutes a strong single family.
     issuer_bonus = min(0.12 * component_scores["issuer_context_score"], 12.0)
-    raw = round(min(anomaly_evidence * corr["corroboration_multiplier"] + issuer_bonus, 100.0), 2)
+    # Enforcement history is backward-looking: a small attention bonus only.
+    enforcement_bonus = min(0.10 * enforcement_score_val, 8.0)
+    raw = round(min(anomaly_evidence * corr["corroboration_multiplier"] + issuer_bonus + enforcement_bonus, 100.0), 2)
 
     # ---- evidence quality (reviewability gate) ----
     n_artifacts = sum(1 for f in fetches.values() if hasattr(f, "ok") and f.ok())
@@ -243,7 +253,12 @@ def build_package(ticker: str, fetches: dict[str, Any]) -> dict[str, Any]:
             "social_issuer_specific_burst", "social_promotional_noise",
             "market_anomaly_score", "market_structure_score",
             "issuer_context_score", "halt_regulatory_score", "coordination_score",
-            "issuer_event_score")},
+            "issuer_event_score", "enforcement_history_score")},
+        "enforcement_history": {
+            "score": round(enforcement_score_val, 2), "basis": enforcement_basis,
+            "matched_releases": [{"title": m.get("title"), "link": m.get("link"),
+                                  "date": m.get("date"), "match": m.get("match")} for m in enf_matched[:5]],
+        },
         "edgar_issuer_event": {
             "score": component_scores["issuer_event_score"],
             "basis": issuer_event_basis,
@@ -277,6 +292,7 @@ def build_package(ticker: str, fetches: dict[str, Any]) -> dict[str, Any]:
             "Coordination and social features have high false-positive rates and require human verification of the cited clusters.",
             "Cross-sectional/rolling anomaly is statistical context, not evidence of manipulation.",
             "Market-structure, threshold, FTD and halt data are context, not proof of naked shorting or manipulation.",
+            "Enforcement-history matches are BACKWARD-LOOKING (prior SEC releases) and never imply current misconduct; verify the cited releases.",
             "Replay mode uses cached custody artifacts; live mode uses .env credentials. Both preserve provenance.",
         ],
         "prohibited_actions": PROHIBITED_ACTIONS,

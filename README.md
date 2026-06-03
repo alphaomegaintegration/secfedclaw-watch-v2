@@ -148,7 +148,9 @@ should — which lifted precision from 0.65 to 0.71 with no recall loss.
 
 Self-contained offline HTML (inline CSS/JS, **no auto-loaded external resources
 or callbacks**) → `out/dashboard_v2.html`, built on a small consistent design
-system (color/space/type tokens, accessible contrast). Six tabs:
+system (color/space/type tokens, accessible contrast). Eight tabs (Overview,
+Packages, Agents, **Status**, **LLM cost**, Methodology, SEC case studies,
+Backtest):
 
 - **Overview** — operator KPI cards (universe, **score-ready %**, flagged
   ≥MEDIUM, CRITICAL/HIGH, mean anomaly-evidence, mode) + the ranked, filterable
@@ -160,6 +162,11 @@ system (color/space/type tokens, accessible contrast). Six tabs:
 - **Agents** — the four-agent **orchestration** (Scout→Analyst→Adversary→
   Packager): the data feeds each pulls, the data-engineering + algorithms it
   applies, and its output, plus the live/replay data-feed health table.
+- **Status** — operational view *from an agent perspective*: each agent's live
+  state, the integrations it depends on, and per-connection live/replay/ok
+  health, plus system KPIs (preflight verdict, model, LLM spend, last run).
+- **LLM cost** — usage & cost ledger (total cost, by model, by component); empty
+  until an LLM-backed component records spend via `usage.record(...)`.
 - **Methodology** — review-priority bands + a full **data dictionary** of every
   metric, and an explicit "what it does NOT do".
 - **SEC case studies** — public SEC matters mapped to *which thresholds fire and
@@ -340,7 +347,29 @@ possible but prints a warning. Publishing to a public host (e.g. GitHub Pages)
 is **not recommended** and is left entirely to the operator. If no URL is set,
 the digest links to the local `file://` path instead.
 
-## 15. Roadmap (next, in priority order)
+## 15. Enforcement history, per-class calibration, agent status & LLM cost
+
+- **Enforcement-history family** (`features/enforcement.py`) — parses the SEC
+  litigation-releases feed and flags when the ticker/issuer appears in recent
+  actions. **Backward-looking context** (family E): it raises review attention
+  and is a corroborating family, but never implies current misconduct; matched
+  releases are emitted for verification.
+- **Per-class backtest** (`backtest.py per_class_breakdown`) — precision/recall
+  by liquidity class on a class-balanced corpus. Observed: small-cap P≈1.0,
+  thin/microcap P≈0.3 at recall 1.0 — microcaps are tuned for high recall (don't
+  miss pumps) at the cost of precision (more benign windows surface). Shown on
+  the Backtest tab.
+- **Agent status** (`agent_status.py` + Status tab) — per-agent live state, the
+  integrations each depends on, and per-connection live/replay/ok health.
+- **LLM usage & cost** (`usage.py` + LLM-cost tab) — a dependency-free ledger any
+  LLM-using component records to (`usage.record(model, in_tok, out_tok, component)`),
+  with a configurable pricing table and cost aggregation by model/component/day.
+- **Live data through the agents** — live is the default (`scan.py --live`);
+  `tests/test_live_flow.py` injects a mock live transport and proves data flows
+  Scout→Analyst→Adversary→Packager with custody persistence. Real live runs use
+  the operator's network + `.env`.
+
+## 16. Roadmap (next, in priority order)
 
 1. Accrue real operator labels in the ledger and retrain (replace synthetic bootstrap).
 2. Per-class precision/recall reporting in the backtest (microcap vs large).
@@ -371,9 +400,11 @@ secfedclaw_v2/
   daily.py             scheduled daily run (lock, preflight→edgar→scan→backtest→dashboard→digest)
   notify.py            daily WATCH digest (Telegram, file fallback, dashboard deep-link)
   serve.py             localhost static server to view/publish the dashboard
+  usage.py             LLM usage & cost ledger (recorder + pricing + summary)
+  agent_status.py      per-agent + integration status assembler
   deploy/              launchd plist + cron + schedule_install.sh
-  features/            market, social (X/Reddit/StockTwits), coordination, official, temporal, edgar, security_class
-  tests/               test_v2 (14) + edgar (6) + flatfiles (5) + social (5) + security_class (4) + social_import (6) + model (6) + daily (2)
+  features/            market, social (X/Reddit/StockTwits), coordination, official, temporal, edgar, security_class, enforcement
+  tests/               14 suites, ~72 tests (incl. enforcement, usage, live_flow)
   out/                 generated packages, review_queue, backtest, dashboard, edgar/
   flatfiles/day_aggs/  cached + hashed historical day-aggregate flat files
 ```

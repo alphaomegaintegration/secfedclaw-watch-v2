@@ -171,6 +171,58 @@ def _fetches(label: str, ticker: str, rng: random.Random) -> dict[str, Any]:
     }
 
 
+def _class_balanced_sample(label: str, ticker: str, rng) -> dict[str, Any]:
+    """Build fetches with price/volume (hence liquidity class) randomized
+    INDEPENDENTLY of the label, so per-class precision/recall is meaningful."""
+    none = _F("none", None, mode="unavailable")
+    base_price = rng.choice([0.5, 1.5, 6.0, 25.0, 90.0, 180.0])
+    daily_vol = rng.choice([6e5, 4e6, 2.5e7, 1.5e8])
+    if label == "pump":
+        spike = rng.uniform(0.30, 0.90); vol_mult = rng.uniform(8, 30)
+        x = _promo_posts(max(4, int(rng.uniform(4, 12))), ticker, coordinated=True, rng=rng); rev = True
+    elif label == "benign_news":
+        spike = rng.uniform(0.06, 0.20); vol_mult = rng.uniform(2, 4)
+        x = _promo_posts(rng.randint(0, 4), ticker, coordinated=(rng.random() < 0.15), rng=rng); rev = False
+    else:
+        spike = 0.0; vol_mult = 1.0
+        x = _promo_posts(rng.randint(0, 3), ticker, coordinated=False, rng=rng); rev = False
+    daily = _daily_baseline(40, base_price, daily_vol, rng, spike=spike, vol_mult=vol_mult, reversal=rev)
+    grouped = _grouped_with(ticker, spike, vol_mult > 6.0, rng)
+    return {"daily_range": _F("d", daily), "grouped": _F("g", grouped),
+            "snapshot": none, "trades": none, "quotes": none, "x": _F("x", x),
+            "reddit": none, "reddit_unavailable": True, "stocktwits": none,
+            "otc_threshold": none, "reg_sho": none, "halts": none, "submissions": none,
+            "edgar": none, "litigation": none}
+
+
+def per_class_breakdown(n_per_class: int, seed: int, threshold: str) -> dict[str, Any]:
+    """Precision/recall by liquidity class on a class-balanced synthetic corpus."""
+    import random
+    thr = PRIORITY_RANK[threshold]
+    rng = random.Random(seed ^ 0x5EC)
+    by: dict[str, dict[str, int]] = {}
+    for label in ("pump", "benign_news", "control"):
+        for i in range(n_per_class):
+            ticker = f"{label[:2].upper()}{i:03d}"
+            pkg = scoring_v2.build_package(ticker, _class_balanced_sample(label, ticker, rng))
+            cls = (pkg.get("security_class") or {}).get("class", "unknown")
+            d = by.setdefault(cls, {"tp": 0, "fp": 0, "tn": 0, "fn": 0})
+            flagged = PRIORITY_RANK[pkg["review_priority"]] >= thr
+            pos = label == "pump"
+            if pos and flagged: d["tp"] += 1
+            elif pos and not flagged: d["fn"] += 1
+            elif not pos and flagged: d["fp"] += 1
+            else: d["tn"] += 1
+    out = {}
+    for cls, c in by.items():
+        p = c["tp"] / (c["tp"] + c["fp"]) if (c["tp"] + c["fp"]) else 0.0
+        r = c["tp"] / (c["tp"] + c["fn"]) if (c["tp"] + c["fn"]) else 0.0
+        f1 = 2 * p * r / (p + r) if (p + r) else 0.0
+        out[cls] = {**c, "precision": round(p, 3), "recall": round(r, 3), "f1": round(f1, 3),
+                    "n": sum(c.values())}
+    return out
+
+
 def synthetic_corpus(n_per_class: int, seed: int) -> list[dict[str, Any]]:
     rng = random.Random(seed)
     corpus = []
@@ -230,6 +282,7 @@ def run(n_per_class: int, seed: int, threshold: str) -> dict[str, Any]:
                     "f1": round(f1, 3), "accuracy": round(accuracy, 3)},
         "priority_distribution": by_priority,
         "calibration_ledger": ledger,
+        "per_class": per_class_breakdown(n_per_class, seed, threshold),
         "sec_case_corpus": sec_cases(),
         "rows": rows,
         "limitations": [
@@ -260,7 +313,9 @@ def main() -> int:
           f"F1 {m['f1']:.3f}   accuracy {m['accuracy']:.3f}")
     print(f"  TP {cm['tp']}  FP {cm['fp']}  TN {cm['tn']}  FN {cm['fn']}")
     print(f"  priority distribution: {result['priority_distribution']}")
-    print(f"  calibration ledger:    {result['calibration_ledger']}")
+    print("  per-class (class-balanced):")
+    for cls, c in result["per_class"].items():
+        print(f"    {cls:<14} P {c['precision']:.2f}  R {c['recall']:.2f}  F1 {c['f1']:.2f}  (n={c['n']})")
     print(f"  results: {out}")
     return 0
 
