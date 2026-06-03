@@ -35,28 +35,30 @@ Every data source operates in one of three modes:
 
 The v0.2 composite engine computes review priority through:
 
-1. **Component scores** — market_anomaly, social, coordination, official, microstructure, issuer_event
+1. **Component scores** — market_anomaly, social, coordination, official, microstructure, issuer_event (all class-aware)
 2. **Anomaly evidence** — concern-bearing anchor separated from reviewability
 3. **Temporal corroboration** — cross-source multiplier; HIGH/CRITICAL needs ≥2 families
 4. **Review priority** — LOW / MEDIUM / HIGH / CRITICAL_REVIEW (WATCH ceiling)
 
 Key design principles:
 - Double-confirmation required (price AND volume) for market anomaly
+- Per-security-class calibrated thresholds (z_confirm, floor, social_weight) — see [Security-Class Thresholds](Security-Class-Thresholds.md)
 - Promo content **deflates** social scores (not inflates)
 - Unanimous bullish sentiment + promo → capped coordination nudge
-- Routine-context floor caps benign tickers to LOW
+- Routine-context floor caps benign tickers to LOW (class-aware)
 - Benign-explanation band reduction for known-explainable moves
 
 ## Feature Modules
 
 ```
 features/
-  market.py        time-series + cross-sectional anomaly, microstructure
-  social.py        multi-platform normalize/dedup, sentiment, cross-platform coordination
-  coordination.py  k-shingle Jaccard clustering, shared domains, burst sync
-  official.py      FTD/threshold/halt/issuer (any ticker)
-  temporal.py      cross-source corroboration multiplier
-  edgar.py         issuer-event features from SEC filing diffs
+  security_class.py  liquidity classification + per-class threshold params
+  market.py          time-series + cross-sectional anomaly, microstructure
+  social.py          multi-platform normalize/dedup, sentiment, cross-platform coordination
+  coordination.py    k-shingle Jaccard clustering, shared domains, burst sync
+  official.py        FTD/threshold/halt/issuer (any ticker)
+  temporal.py        cross-source corroboration multiplier
+  edgar.py           issuer-event features from SEC filing diffs
 ```
 
 ## Output Artifacts
@@ -73,8 +75,9 @@ out/
 
 ## Test Suite
 
-30 tests across 4 files:
+35 tests across 5 files:
 - `tests/test_v2.py` — 14 tests (robust stats, market, coordination, social, composite)
 - `tests/test_edgar.py` — 6 tests (parsing, features, scoring integration)
 - `tests/test_flatfiles.py` — 5 tests (parsing, signing, market fetches, scoring)
 - `tests/test_social.py` — 5 tests (multi-platform normalization, sentiment, scoring integration)
+- `tests/test_security_class.py` — 5 tests (classification, threshold ordering, class-aware scoring)

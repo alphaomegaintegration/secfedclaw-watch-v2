@@ -59,11 +59,12 @@ python3 dashboard_v2.py    # render out/dashboard_v2.html
 
 ### Tests
 ```bash
-python3 -m pytest tests/ -v              # all 30 tests
+python3 -m pytest tests/ -v              # all 35 tests
 python3 -m pytest tests/test_v2.py -v    # core scoring (14 tests)
 python3 -m pytest tests/test_edgar.py -v # EDGAR pipeline (6 tests)
 python3 -m pytest tests/test_flatfiles.py -v  # flat files (5 tests)
 python3 -m pytest tests/test_social.py -v     # multi-platform social (5 tests)
+python3 -m pytest tests/test_security_class.py -v  # security-class thresholds (5 tests)
 ```
 
 ## Operational Modes
