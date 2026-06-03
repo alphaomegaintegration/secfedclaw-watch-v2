@@ -126,7 +126,7 @@ class PackagerAgent:
     role = "packager"
 
     def __init__(self, out_dir: Path | None = None):
-        self.out_dir = out_dir or (fed_claw_root() / "secfedclaw_v2" / "out")
+        self.out_dir = out_dir or (Path(__file__).resolve().parent / "out")
 
     def write(self, package: dict[str, Any]) -> dict[str, Any]:
         self.out_dir.mkdir(parents=True, exist_ok=True)
