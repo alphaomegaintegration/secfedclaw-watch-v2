@@ -65,7 +65,11 @@ It does NOT produce trading signals, accusations, or findings above WATCH.
     — numpy-only gradient boosting; calibrated advisory probability + feature
     contributions; abstains until ≥40 two-class operator labels; rules engine
     stays primary; never a guilt label.
-
+13. **Go-live tooling** (`preflight.py`, `label.py`) — `preflight.py` reports
+    per-source live readiness (GO_LIVE / DEGRADED / REPLAY_ONLY) with real
+    creds; `scan.py --live` runs it then scans live; live responses persist to
+    `live_cache/<UTC>/` (raw + SHA256) for custody; `label.py` records operator
+    outcomes into the ledger to drive retraining.
 14. **Scheduled daily run** (`daily.py`, `deploy/`) — lock-protected, logged
     once-per-day pass (preflight→EDGAR→scan→backtest→dashboard→digest) writing
     `out/daily_run_summary.json`; install via launchd (`deploy/schedule_install.sh`)

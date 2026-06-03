@@ -107,6 +107,11 @@ python3 scan.py --discover 15                 # + top 15 cross-sectional movers
 python3 scan.py --no-live                      # force replay from custody artifacts
 python3 backtest.py --n 50                     # precision/recall calibration harness
 python3 dashboard_v2.py                        # render out/dashboard_v2.html (offline)
+
+# go live (on a machine with network + the .env credentials):
+python3 preflight.py                           # per-source live readiness (GO/DEGRADED)
+python3 scan.py --live --tickers AAPL AMC GME  # preflight, then scan live
+python3 label.py out/AMC_..._watch_v2.json useful_watch   # feed the calibration ledger
 ```
 
 On your laptop (open network) it runs **live** off the `.env` keys; in a
@@ -304,6 +309,28 @@ python3 train_model.py            # ledger + synthetic bootstrap
 python3 train_model.py --no-bootstrap   # real ledger labels only
 ```
 
+## 14. Going live (replay → live)
+
+The engine is **connection-aware**: the same code runs live on a networked
+machine with the `.env` credentials and replays cached custody artifacts
+otherwise. To switch on live:
+
+1. `python3 preflight.py` — probes every source with the real creds and prints a
+   per-source verdict: `GO_LIVE` (core market source reachable), `DEGRADED`
+   (only non-core live), or `REPLAY_ONLY`. No secrets printed; read-only probes.
+2. `python3 scan.py --live …` (or `python3 pipeline.py`) — runs preflight, then
+   scans with `prefer_live=True`. Sources that aren't reachable degrade to
+   cached replay individually, and the per-ticker `source_health` shows which.
+3. **Live custody:** every successful live response is persisted (raw + SHA256)
+   under `live_cache/<UTC>/`, so a live package is as reproducible/auditable as a
+   replayed one (SOUL evidence discipline). `flatfiles/day_aggs/` caches history.
+4. **Feedback loop:** label reviewed packages with `python3 label.py … <label>`
+   and `python3 train_model.py` to recalibrate as real labels accrue.
+
+Credentials used live: `POLYGON_API_KEY`, `X_BEARER_TOKEN`/`TWITTER_BEARER_TOKEN`,
+`SEC_USER_AGENT`, `MASSIVE_FLATFILES_*`, and (optional) `REDDIT_CLIENT_ID`/
+`REDDIT_CLIENT_SECRET`. StockTwits/FINRA/Nasdaq need none.
+
 ### Schedule a daily live run (`daily.py`, `deploy/`)
 
 `daily.py` is a lock-protected, logged once-per-day pass: preflight → EDGAR
@@ -397,6 +424,8 @@ secfedclaw_v2/
   ledger.py            operator calibration-label ledger
   model.py             numpy gradient-boosted review-priority model (advisory)
   train_model.py       train/cross-validate the model (ledger + synthetic bootstrap)
+  preflight.py         per-source live-readiness check (GO/DEGRADED/REPLAY)
+  label.py             operator labeling CLI for the calibration ledger
   daily.py             scheduled daily run (lock, preflight→edgar→scan→backtest→dashboard→digest)
   notify.py            daily WATCH digest (Telegram, file fallback, dashboard deep-link)
   serve.py             localhost static server to view/publish the dashboard
