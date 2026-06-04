@@ -330,8 +330,25 @@ class DataConnector:
             if messages:
                 return self._live(f"discord_{ticker}", 200, {"messages": messages}, None,
                                   note=f"discord bot search {len(messages)} msgs across {len(guild_ids)} guild(s)")
+        # Fallback: scrape public Discord server listing pages via Firecrawl
+        fc_key = self.env.get("FIRECRAWL_API_KEY")
+        if fc_key and self.prefer_live:
+            try:
+                url = f"https://disboard.org/search?keyword={ticker}+stock"
+                api_url = "https://api.firecrawl.dev/v1/scrape"
+                body = json.dumps({"url": url, "formats": ["markdown"], "waitFor": 3000}).encode()
+                req = urllib.request.Request(api_url, data=body, headers={
+                    "Authorization": f"Bearer {fc_key}", "Content-Type": "application/json"})
+                with urllib.request.urlopen(req, timeout=30) as r:
+                    data = json.loads(r.read())
+                    md = (data.get("data") or {}).get("markdown", "")
+                    if r.status == 200 and data.get("success") and len(md) > 200:
+                        return self._live(f"discord_{ticker}", 200, data,
+                                          redact(api_url), note=f"discord ${ticker} via disboard+firecrawl")
+            except Exception:
+                pass
         return self._replay(f"discord_{ticker}", f"*/discord_*{ticker}*.json",
-                            note="discord unavailable; set DISCORD_BOT_TOKEN + DISCORD_GUILD_IDS")
+                            note="discord unavailable")
 
     def instagram_hashtag(self, ticker: str) -> Fetch:
         """Instagram hashtag search via Picuki (public IG proxy) + Firecrawl.
