@@ -201,16 +201,38 @@ class DataConnector:
         return self._replay(f"polygon_quotes_{ticker}", f"*/polygon_quotes_{ticker}_*.json", f"*quotes_{ticker.lower()}*.json")
 
     def x_recent(self, ticker: str) -> Fetch:
-        """X recent search for a cashtag (live preferred, replay fallback)."""
+        """X recent search for a cashtag. Tries: API → Firecrawl → replay."""
         ticker = ticker.upper()
-        if self.live_available() or self.env.get("X_BEARER_TOKEN") or self.env.get("TWITTER_BEARER_TOKEN"):
-            bearer = self.env.get("X_BEARER_TOKEN") or self.env.get("TWITTER_BEARER_TOKEN")
-            if bearer and self.prefer_live:
-                url = (f"https://api.twitter.com/2/tweets/search/recent?query=%24{ticker}"
-                       f"&max_results=25&tweet.fields=public_metrics,created_at,author_id,entities")
-                status, data = self._http_json(url, {"Authorization": f"Bearer {bearer}"})
-                if status == 200 and data:
-                    return self._live(f"x_recent_{ticker}", status, data, url)
+        # Path 1: X API v2 (if bearer token + credits available)
+        bearer = self.env.get("X_BEARER_TOKEN") or self.env.get("TWITTER_BEARER_TOKEN")
+        if bearer and self.prefer_live:
+            url = (f"https://api.twitter.com/2/tweets/search/recent?query=%24{ticker}"
+                   f"&max_results=25&tweet.fields=public_metrics,created_at,author_id,entities")
+            status, data = self._http_json(url, {"Authorization": f"Bearer {bearer}"})
+            if status == 200 and data:
+                return self._live(f"x_recent_{ticker}", status, data, url)
+        # Path 2: Firecrawl via Nitter (open-source X frontend, no login needed)
+        fc_key = self.env.get("FIRECRAWL_API_KEY")
+        if fc_key and self.prefer_live:
+            for nitter_host in ("nitter.net", "nitter.privacydev.net"):
+                try:
+                    x_url = f"https://{nitter_host}/search?f=tweets&q=%24{ticker}"
+                    api_url = "https://api.firecrawl.dev/v1/scrape"
+                    body = json.dumps({"url": x_url, "formats": ["markdown"],
+                                       "waitFor": 3000}).encode()
+                    req = urllib.request.Request(api_url, data=body, headers={
+                        "Authorization": f"Bearer {fc_key}",
+                        "Content-Type": "application/json",
+                        "User-Agent": "secfedclaw-watch/2.0"})
+                    with urllib.request.urlopen(req, timeout=30) as r:
+                        fc_data = json.loads(r.read())
+                        if r.status == 200 and fc_data.get("success"):
+                            md = (fc_data.get("data") or {}).get("markdown", "")
+                            if len(md) > 200:  # has actual content, not just nav
+                                return self._live(f"x_recent_{ticker}", 200, fc_data,
+                                                  redact(api_url), note=f"x ${ticker} via nitter+firecrawl")
+                except Exception:
+                    continue
         return self._replay(f"x_recent_{ticker}", f"*/x_recent_search_{ticker}.json", f"*x_recent_search*{ticker.lower()}*.json")
 
     def reddit_oauth(self, ticker: str, subreddits: list[str] | None = None) -> Fetch:
