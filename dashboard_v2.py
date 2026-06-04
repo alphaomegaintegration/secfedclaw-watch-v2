@@ -633,6 +633,122 @@ def network_graph_panel(packages: list[dict[str, Any]]) -> str:
         '</script>')
 
 
+def how_it_works_panel() -> str:
+    """Interactive end-to-end walkthrough for SEC analysts."""
+    sections = [
+        ("1", "Data Collection", "Scout Agent", "#3fb950",
+         "The Scout pulls data from <b>22 sources</b> across 8 social platforms, 3 market providers, "
+         "and 6 official/regulatory feeds. Each response is persisted with SHA-256 hash for custody.",
+         '<table class="mini"><thead><tr><th>Category</th><th>Sources</th><th>What it captures</th></tr></thead><tbody>'
+         '<tr><td><b>Social (8)</b></td><td>X/Twitter, Reddit, StockTwits, Discord, Instagram, Forums, Social web, Telegram</td>'
+         '<td>Post text, author, timestamp, sentiment, engagement — for coordination + promo detection</td></tr>'
+         '<tr><td><b>Market (5)</b></td><td>Polygon (4 endpoints) + FMP (3 endpoints)</td>'
+         '<td>OHLCV, snapshot, cross-section, company profile — for anomaly z-scores</td></tr>'
+         '<tr><td><b>Official (6)</b></td><td>SEC EDGAR, FINRA, Nasdaq, SEC litigation</td>'
+         '<td>Filings, insider trades, thresholds, halts, enforcement — for issuer-event + regulatory context</td></tr>'
+         '</tbody></table>'),
+        ("2", "Data Engineering", "Analyst Agent", "#4da3ff",
+         "Raw data is normalized, deduplicated, and engineered into features the scoring engine consumes.",
+         '<table class="mini"><thead><tr><th>Process</th><th>Input</th><th>Output</th></tr></thead><tbody>'
+         '<tr><td><b>Social normalization</b></td><td>Posts from 8 platforms (different schemas)</td>'
+         '<td>Unified post schema: platform, id, text, author, sentiment, engagement</td></tr>'
+         '<tr><td><b>Deduplication</b></td><td>Raw posts (may duplicate across tickers/platforms)</td>'
+         '<td>Deduped by (platform, id) — count of removed duplicates tracked</td></tr>'
+         '<tr><td><b>Coordination graph</b></td><td>Deduped posts</td>'
+         '<td>Near-duplicate clusters (k-shingle Jaccard), shared domains, burst sync, author HHI</td></tr>'
+         '<tr><td><b>Market baselines</b></td><td>20/60-day daily OHLCV + same-day cross-section</td>'
+         '<td>Robust z-scores (median/MAD) for price AND volume; double-confirmation flag</td></tr>'
+         '<tr><td><b>Liquidity classification</b></td><td>Price + daily dollar-volume</td>'
+         '<td>thin_microcap / small_cap / mid_cap / large_cap → class-specific thresholds</td></tr>'
+         '<tr><td><b>EDGAR daily-diff</b></td><td>SEC daily-index master files</td>'
+         '<td>Insider (Form 3/4/5/144), dilution (S-1/S-3/424B), material (8-K), late, delisting</td></tr>'
+         '</tbody></table>'),
+        ("3", "Scoring", "Analyst Agent", "#4da3ff",
+         "Engineered features are combined into <b>component scores</b>, then fused into a composite watch score "
+         "with corroboration gating and safety caps.",
+         '<table class="mini"><thead><tr><th>Score</th><th>Range</th><th>What it measures</th><th>Key threshold</th></tr></thead><tbody>'
+         '<tr><td><b>market_anomaly</b></td><td>0–100</td><td>Price+volume abnormality vs baseline</td><td>Both price AND volume z must exceed class threshold</td></tr>'
+         '<tr><td><b>coordination</b></td><td>0–100</td><td>Near-duplicate clusters + shared domains + burst sync</td><td>≥30 for meaningful coordination signal</td></tr>'
+         '<tr><td><b>issuer_event</b></td><td>0–100</td><td>EDGAR insider/dilution/delisting into promoted demand</td><td>Insider selling + dilution = classic pump tell</td></tr>'
+         '<tr><td><b>enforcement_history</b></td><td>0–100</td><td>Prior SEC actions on this issuer</td><td>Backward-looking context, not proof</td></tr>'
+         '<tr><td><b>social_burst</b></td><td>0–100</td><td>Issuer-specific social activity (promo deflated)</td><td>Promo noise DEFLATES, not inflates</td></tr>'
+         '<tr><td><b>anomaly_evidence</b></td><td>0–100</td><td>Concern-bearing signal (separated from reviewability)</td><td>Must clear class-specific floor to escape LOW</td></tr>'
+         '</tbody></table>'
+         '<p class="small muted"><b>Corroboration gate:</b> HIGH/CRITICAL requires ≥2 independent families (market, coordination, '
+         'social, issuer, halt, issuer_event). Single-source signals are capped at MEDIUM.</p>'),
+        ("4", "Adversarial Review", "Adversary Agent", "#f85149",
+         "The Adversary <b>can only LOWER priority or add caveats</b> — never raise it. It checks:",
+         '<table class="mini"><tbody>'
+         '<tr><td>✓ Corroboration enforcement</td><td>HIGH+ with &lt;2 families → downgraded to MEDIUM</td></tr>'
+         '<tr><td>✓ Coordination authenticity</td><td>Score ≥30 but no real clusters → caveat added</td></tr>'
+         '<tr><td>✓ Promotional noise dominance</td><td>Promo &gt; 2× issuer-specific → flagged as likely spam</td></tr>'
+         '<tr><td>✓ Replay staleness</td><td>Cached/replayed data → caveat to confirm against live</td></tr>'
+         '<tr><td>✓ Benign explanation strength</td><td>Strong benign + weak anomaly → reduced one band</td></tr>'
+         '</tbody></table>'),
+        ("5", "Model Advisory", "GBM Model", "#b39ddb",
+         "The gradient-boosted model adds a <b>calibrated probability</b> — advisory only, never changes the rules-based priority.",
+         '<table class="mini"><thead><tr><th>Feature</th><th>Importance</th><th>What it learned</th></tr></thead><tbody>'
+         '<tr><td>coordination_score</td><td><b>32%</b></td><td>Coordinated promotion is the #1 pump discriminator</td></tr>'
+         '<tr><td>social_promotional_noise</td><td>26%</td><td>Promotional language volume matters (Gallagher/OST cases)</td></tr>'
+         '<tr><td>market_anomaly_score</td><td>22%</td><td>Large-cap manipulation shows measurable market moves (Citron)</td></tr>'
+         '<tr><td>class_ordinal</td><td>20%</td><td>Microcaps are primary pump targets</td></tr>'
+         '</tbody></table>'
+         '<p class="small muted"><b>Labels:</b> useful_watch (genuine review-worthy) / false_positive (benign) / '
+         'benign_explained (legitimate catalyst) / missed_event (should have flagged higher) / insufficient_evidence. '
+         'Trained on 91 real labels from 10 SEC/DOJ enforcement cases + 180 bootstrap.</p>'),
+        ("6", "Review Priority Bands", "Output", "#d29922",
+         "The composite watch score maps to a review-priority band:",
+         '<div class="bands" style="margin:8px 0">'
+         '<span class="pill low">LOW &lt;25</span> '
+         '<span class="pill med">MEDIUM 25–49</span> '
+         '<span class="pill high">HIGH 50–74</span> '
+         '<span class="pill crit">CRITICAL ≥75</span></div>'
+         '<table class="mini"><tbody>'
+         '<tr><td><b>LOW</b></td><td>Routine — no immediate review needed. Routine-context floor not cleared.</td></tr>'
+         '<tr><td><b>MEDIUM</b></td><td>Review when bandwidth allows. Some anomaly evidence but may be single-source or benign-explainable.</td></tr>'
+         '<tr><td><b>HIGH</b></td><td>Priority review. ≥2 corroborating families, market + social or issuer signals confirmed.</td></tr>'
+         '<tr><td><b>CRITICAL</b></td><td>Urgent review. Strong multi-source corroboration across 3+ families.</td></tr>'
+         '</tbody></table>'),
+        ("7", "Analyst Notification", "Daily Digest", "#3fb950",
+         "Flagged tickers (≥MEDIUM) are delivered to the authorized analyst:",
+         '<table class="mini"><tbody>'
+         '<tr><td><b>Telegram digest</b></td><td>Concise summary of flagged tickers with scores + deep-link to dashboard</td></tr>'
+         '<tr><td><b>Dashboard</b></td><td>Full evidence packages, coordination network graph, component breakdowns</td></tr>'
+         '<tr><td><b>Daily run summary</b></td><td>Machine-readable JSON with preflight verdict, step results, errors</td></tr>'
+         '</tbody></table>'),
+        ("8", "Analyst Actions", "Human Review", "#cfe4ff",
+         "What the SEC analyst should do with each flagged ticker:",
+         '<table class="mini"><tbody>'
+         '<tr><td><b>1. Review the package</b></td><td>Open the evidence card — check component scores, coordination clusters, '
+         'adversary caveats, and the non-accusatory rationale.</td></tr>'
+         '<tr><td><b>2. Check benign explanations</b></td><td>Is there a real catalyst (earnings, FDA approval, merger)? '
+         'Are the promotional posts spam unrelated to the ticker?</td></tr>'
+         '<tr><td><b>3. Cross-reference externally</b></td><td>Use the ticker links (EDGAR, Nasdaq, StockTwits) to verify '
+         'claims against primary sources. Check OATS/Blue Sheet if available.</td></tr>'
+         '<tr><td><b>4. Label the outcome</b></td><td><code>python3 label.py out/TICKER_..._watch_v2.json useful_watch</code> '
+         '— this feeds the model for continuous improvement.</td></tr>'
+         '<tr><td><b>5. Escalate if warranted</b></td><td>SECFEDCLAW produces WATCH context only. Any freeze, legal process, '
+         'or external contact requires <b>separate lawful human authorization</b>.</td></tr>'
+         '</tbody></table>'
+         '<p class="small warn"><b>⚠ WATCH ceiling:</b> This system does not assert fraud, recommend trades, contact anyone, '
+         'freeze assets, or initiate legal process. It reduces time-to-review — nothing more.</p>'),
+    ]
+    cards = "".join(
+        f'<div class="card" style="border-left:3px solid {color}">'
+        f'<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">'
+        f'<span style="background:{color};color:#fff;font-weight:800;font-size:11px;width:24px;height:24px;'
+        f'line-height:24px;text-align:center;border-radius:50%">{num}</span>'
+        f'<h3 style="margin:0">{esc(title)}</h3>'
+        f'<span class="tag" style="margin-left:auto">{esc(agent)}</span></div>'
+        f'<p class="small">{desc}</p>{detail}</div>'
+        for num, title, agent, color, desc, detail in sections)
+    return (
+        '<p class="intro">End-to-end walkthrough of how SECFEDCLAW processes data and produces review priorities — '
+        'from raw source data to analyst notification. Each step shows what the agents do, how data is engineered, '
+        'how scores are computed, and what the analyst should do with the output.</p>'
+        + cards)
+
+
 def backtest_panel(bt: dict[str, Any]) -> str:
     if not bt:
         return '<p class="muted">No backtest results. Run backtest.py.</p>'
@@ -767,10 +883,11 @@ def build_html(queue: dict, packages: list, bt: dict) -> str:
     mode = queue.get("data_mode", "?")
     n_pkg = len([p for p in packages if p])
     tabs = (_tab("Overview", "overview", True) + _tab("Packages", "packages")
-            + _tab("Network", "network") + _tab("Agents", "agents")
-            + _tab("Learning", "learning") + _tab("Status", "status")
-            + _tab("LLM cost", "llm") + _tab("Methodology", "methodology")
-            + _tab("SEC case studies", "cases") + _tab("Backtest", "backtest"))
+            + _tab("Network", "network") + _tab("How it works", "howitworks")
+            + _tab("Agents", "agents") + _tab("Learning", "learning")
+            + _tab("Status", "status") + _tab("LLM cost", "llm")
+            + _tab("Methodology", "methodology") + _tab("SEC case studies", "cases")
+            + _tab("Backtest", "backtest"))
     return (
         "<!doctype html><html lang='en'><head><meta charset='utf-8'>"
         "<meta name='viewport' content='width=device-width,initial-scale=1'>"
@@ -801,6 +918,8 @@ def build_html(queue: dict, packages: list, bt: dict) -> str:
         # network graph
         f"<section id='network' class='panel'><h2>Coordination network</h2>"
         f"{network_graph_panel([p for p in packages if p])}</section>"
+        # how it works
+        f"<section id='howitworks' class='panel'><h2>How it works</h2>{how_it_works_panel()}</section>"
         # agents
         f"<section id='agents' class='panel'><h2>Agents &amp; orchestration</h2>{agents_panel(queue)}</section>"
         # learning
