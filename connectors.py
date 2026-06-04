@@ -227,14 +227,22 @@ class DataConnector:
                                         "Shortsqueeze", "smallstreetbets", "RobinHoodPennyStocks"])
         ua = self.env.get("REDDIT_USER_AGENT", "secfedclaw-watch/2.0 by u/secfedclaw")
         if self.prefer_live:
-            # Path 1: public .json endpoint (no auth, no key)
+            # Path 1: RSS feed (most reliable — works when .json is 403-blocked)
+            rss_url = (f"https://www.reddit.com/r/{subs}/search.rss?q=%24{ticker}+OR+{ticker}"
+                       f"&restrict_sr=on&sort=new&limit=25&t=week")
+            rss_status, rss_data = self._http_text(rss_url, {
+                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"})
+            if rss_status == 200 and rss_data and "<entry>" in rss_data:
+                return self._live(f"reddit_{ticker}", rss_status, rss_data, redact(rss_url),
+                                  note=f"reddit RSS r/{subs} (no auth)")
+            # Path 2: public .json endpoint (no auth, no key — blocked on some IPs)
             json_url = (f"https://www.reddit.com/r/{subs}/search.json?q=%24{ticker}+OR+{ticker}"
                         f"&restrict_sr=on&sort=new&limit=50&t=week")
             status, data = self._http_json(json_url, {"User-Agent": ua})
             if status == 200 and data:
                 return self._live(f"reddit_{ticker}", status, data, redact(json_url),
                                   note=f"reddit .json r/{subs} (no auth)")
-            # Path 2: OAuth fallback (if creds are available)
+            # Path 3: OAuth fallback (if creds are available)
             cid = self.env.get("REDDIT_CLIENT_ID")
             csec = self.env.get("REDDIT_CLIENT_SECRET")
             if cid and csec:
