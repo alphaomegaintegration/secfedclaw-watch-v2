@@ -334,53 +334,58 @@ class DataConnector:
                             note="discord unavailable; set DISCORD_BOT_TOKEN + DISCORD_GUILD_IDS")
 
     def instagram_hashtag(self, ticker: str) -> Fetch:
-        """Instagram hashtag search via Firecrawl scraping (no Meta API key needed).
-        Falls back to replay if Firecrawl is unavailable."""
+        """Instagram hashtag search via Picuki (public IG proxy) + Firecrawl.
+        Instagram.com requires login; Picuki mirrors public hashtag pages."""
         ticker = ticker.upper()
         fc_key = self.env.get("FIRECRAWL_API_KEY")
         if self.prefer_live and fc_key:
-            url = f"https://www.instagram.com/explore/tags/{ticker.lower()}/"
-            try:
-                api_url = "https://api.firecrawl.dev/v1/scrape"
-                body = json.dumps({"url": url, "formats": ["markdown"],
-                                   "waitFor": 3000}).encode()
-                req = urllib.request.Request(api_url, data=body, headers={
-                    "Authorization": f"Bearer {fc_key}",
-                    "Content-Type": "application/json",
-                    "User-Agent": "secfedclaw-watch/2.0"})
-                with urllib.request.urlopen(req, timeout=30) as r:
-                    data = json.loads(r.read())
-                    if r.status == 200 and data.get("success"):
-                        return self._live(f"instagram_{ticker}", 200, data,
-                                          redact(api_url), note=f"instagram #{ticker.lower()} via firecrawl")
-            except Exception:
-                pass
+            for url in (f"https://www.picuki.com/tag/{ticker.lower()}",
+                        f"https://imginn.com/tag/{ticker.lower()}/"):
+                try:
+                    api_url = "https://api.firecrawl.dev/v1/scrape"
+                    body = json.dumps({"url": url, "formats": ["markdown"],
+                                       "waitFor": 3000}).encode()
+                    req = urllib.request.Request(api_url, data=body, headers={
+                        "Authorization": f"Bearer {fc_key}",
+                        "Content-Type": "application/json",
+                        "User-Agent": "secfedclaw-watch/2.0"})
+                    with urllib.request.urlopen(req, timeout=30) as r:
+                        data = json.loads(r.read())
+                        md = (data.get("data") or {}).get("markdown", "")
+                        if r.status == 200 and data.get("success") and len(md) > 100:
+                            return self._live(f"instagram_{ticker}", 200, data,
+                                              redact(api_url), note=f"instagram #{ticker.lower()} via picuki+firecrawl")
+                except Exception:
+                    continue
         return self._replay(f"instagram_{ticker}", f"*/instagram_*{ticker}*.json",
                             note="instagram unavailable")
 
     def facebook_search(self, ticker: str) -> Fetch:
-        """Facebook public page search via Firecrawl. Targets stock discussion groups."""
+        """Stock forum search via Firecrawl as Facebook proxy. Facebook blocks
+        direct scraping; we use public stock forums (Stockhouse, InvestorsHub)
+        which aggregate the same retail discussion that FB groups carry."""
         ticker = ticker.upper()
         fc_key = self.env.get("FIRECRAWL_API_KEY")
         if self.prefer_live and fc_key:
-            url = f"https://www.facebook.com/search/posts/?q=%24{ticker}+stock"
-            try:
-                api_url = "https://api.firecrawl.dev/v1/scrape"
-                body = json.dumps({"url": url, "formats": ["markdown"],
-                                   "waitFor": 3000}).encode()
-                req = urllib.request.Request(api_url, data=body, headers={
-                    "Authorization": f"Bearer {fc_key}",
-                    "Content-Type": "application/json",
-                    "User-Agent": "secfedclaw-watch/2.0"})
-                with urllib.request.urlopen(req, timeout=30) as r:
-                    data = json.loads(r.read())
-                    if r.status == 200 and data.get("success"):
-                        return self._live(f"facebook_{ticker}", 200, data,
-                                          redact(api_url), note=f"facebook ${ticker} search via firecrawl")
-            except Exception:
-                pass
+            for url in (f"https://stockhouse.com/companies/bullboard?symbol={ticker.lower()}",
+                        f"https://investorshub.advfn.com/search/search.aspx?q={ticker}"):
+                try:
+                    api_url = "https://api.firecrawl.dev/v1/scrape"
+                    body = json.dumps({"url": url, "formats": ["markdown"]}).encode()
+                    req = urllib.request.Request(api_url, data=body, headers={
+                        "Authorization": f"Bearer {fc_key}",
+                        "Content-Type": "application/json",
+                        "User-Agent": "secfedclaw-watch/2.0"})
+                    with urllib.request.urlopen(req, timeout=30) as r:
+                        data = json.loads(r.read())
+                        md = (data.get("data") or {}).get("markdown", "")
+                        if r.status == 200 and data.get("success") and len(md) > 200:
+                            return self._live(f"forums_{ticker}", 200, data,
+                                              redact(api_url), note=f"stock forums ${ticker} via firecrawl")
+                except Exception:
+                    continue
         return self._replay(f"facebook_{ticker}", f"*/facebook_*{ticker}*.json",
-                            note="facebook unavailable")
+                            note="stock forums unavailable")
 
     def social_web_search(self, ticker: str) -> Fetch:
         """Broad social-web search via Firecrawl: scrapes public stock forums,
