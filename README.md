@@ -42,32 +42,53 @@ agents flagged — and that this prototype addresses:
 
 ## 2. Data sources — live status
 
-**12 of 15 sources are live** with no API keys needed for most. All SEC EDGAR
-APIs are completely keyless per [sec.gov EDGAR APIs](https://www.sec.gov/search-filings/edgar-application-programming-interfaces)
-— only a `User-Agent` header is required.
+**19 data sources** (13 live, 6 need credentials or opt-in). All SEC EDGAR APIs
+are completely keyless per [sec.gov EDGAR APIs](https://www.sec.gov/search-filings/edgar-application-programming-interfaces).
 
-| Source | Auth | Status | Notes |
+**Market & official (all live):**
+
+| Source | Auth | Notes |
+|---|---|---|
+| Polygon aggregates/grouped/snapshot/prev | `POLYGON_API_KEY` | OHLCV, cross-section |
+| Polygon Flat Files (S3 history) | `MASSIVE_FLATFILES_*` | Multi-year day-aggs for backtest |
+| SEC EDGAR submissions | None (User-Agent only) | Dynamic CIK for any ticker |
+| SEC EDGAR daily-index | None (User-Agent only) | Daily-diff pipeline (issuer_event) |
+| SEC litigation/admin feeds | None (User-Agent only) | Enforcement history |
+| FINRA OTC threshold | None (public JSON) | `api.finra.org` |
+| Nasdaq trade halts | None (public RSS) | `nasdaqtrader.com` |
+| Nasdaq Reg SHO threshold | None (public) | `nasdaqtrader.com` |
+
+**Social (8 platforms):**
+
+| Platform | Auth | Status | SEC case reference |
 |---|---|---|---|
-| Polygon aggregates/grouped/snapshot/prev | `POLYGON_API_KEY` | ✅ live | Market data (OHLCV, cross-section) |
-| Polygon Flat Files (S3 history) | `MASSIVE_FLATFILES_*` | ✅ live | Multi-year day-aggs for backtest |
-| X (Twitter) recent search | `X_BEARER_TOKEN` | ✅ live | Cashtag search + engagement |
-| StockTwits symbol stream | None (public) | ✅ live | Native Bullish/Bearish sentiment |
-| SEC EDGAR submissions | None (User-Agent only) | ✅ live | Dynamic CIK lookup for any ticker |
-| SEC EDGAR daily-index | None (User-Agent only) | ✅ live | Daily-diff pipeline (issuer_event) |
-| SEC litigation/admin feeds | None (User-Agent only) | ✅ live | Enforcement history (enforcement family) |
-| FINRA OTC threshold | None (public JSON) | ✅ live | `api.finra.org` threshold list |
-| Nasdaq trade halts | None (public RSS) | ✅ live | `nasdaqtrader.com` halt feed |
-| Nasdaq Reg SHO threshold | None (public) | ✅ live | `nasdaqtrader.com` threshold lists |
-| Reddit (keyless + OAuth fallback) | None / `REDDIT_CLIENT_ID/SECRET` | ✅ live (IP-dependent) | `.json` endpoint first, OAuth fallback; blocked on some IPs |
-| Polygon trades/quotes | Polygon paid tier | ⚠ needs plan | Microstructure (spread, VWAP) |
-| Discord / Telegram | Operator export + opt-in | 🔒 off by default | Authorized import only (§12) |
+| X (Twitter) | `X_BEARER_TOKEN` | ✅ live | Atlas Trading, Citron Research |
+| StockTwits | None (public) | ✅ live | OST, general pump chatter |
+| Reddit | None / `REDDIT_CLIENT_ID` | ✅ live (IP-dependent) | Atlas Trading (r/wallstreetbets) |
+| Social web search | `FIRECRAWL_API_KEY` | ✅ live | Cross-platform promotion via Google |
+| Discord | `DISCORD_BOT_TOKEN` + `DISCORD_GUILD_IDS` | ⚠ needs bot | Atlas Trading ($114M Discord chatroom) |
+| Instagram | `FIRECRAWL_API_KEY` | ⚠ needs login session | OST/CLEU deepfake AI video ads |
+| Facebook | `FIRECRAWL_API_KEY` | ⚠ needs login session | CLEU/OST ad targeting → WhatsApp |
+| Telegram / WhatsApp | Authorized import + opt-in | 🔒 off by default | CLEU/OST WhatsApp groups (§12) |
+
+**Setup for new social connectors:**
+
+```bash
+# Discord: create a bot at discord.com/developers/applications, enable Message Content Intent
+DISCORD_BOT_TOKEN=your_bot_token
+DISCORD_GUILD_IDS=guild_id_1,guild_id_2    # comma-separated server IDs to monitor
+
+# Instagram/Facebook: Firecrawl handles rendering (key already in .env)
+FIRECRAWL_API_KEY=your_key                 # also powers social_web_search
+
+# Telegram/WhatsApp: operator places lawful exports in out/social_import/
+SECFEDCLAW_AUTHORIZED_SOCIAL=1             # opt-in gate
+```
 
 **Remaining additions (by leverage):**
 
-1. **Promotion sources**
-   — `FIRECRAWL_API_KEY` is present for bounded fetches.
-3. **Options flow / OPRA** (Polygon entitlement) — unusual options pre-pump.
-4. **Corporate-actions / split & ticker-change feed** — kills the largest class
+1. **Options flow / OPRA** (Polygon entitlement) — unusual options pre-pump.
+2. **Corporate-actions / split & ticker-change feed** — kills the largest class
    of false anomalies (the `needs_adjustment_review` flag is stubbed for this).
 
 ## 3. Algorithm upgrades (implemented here)
