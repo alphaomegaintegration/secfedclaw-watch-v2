@@ -83,6 +83,10 @@ class ScoutAgent:
             "submissions": c.sec_submissions(cik) if cik else type("F", (), {"data": None, "mode": "unavailable", "ok": lambda self: False})(),
             "edgar": c.edgar_issuer_features(ticker),
             "litigation": c.sec_litigation_releases(),
+            "discord": c.discord_search(ticker),
+            "instagram": c.instagram_hashtag(ticker),
+            "facebook": c.facebook_search(ticker),
+            "social_web": c.social_web_search(ticker),
         }
         # Reddit availability depends on OAuth creds + reachability; reflect it.
         fetches["reddit_unavailable"] = not fetches["reddit"].ok()

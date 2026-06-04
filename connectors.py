@@ -277,6 +277,111 @@ class DataConnector:
         return self._replay(f"stocktwits_{ticker}", f"*/stocktwits_*{ticker}*.json", f"*stocktwits*{ticker.lower()}*.json",
                             note="stocktwits unavailable offline")
 
+    # ---- additional social platforms ------------------------------------
+    def discord_search(self, ticker: str) -> Fetch:
+        """Discord via bot API. Searches authorized servers for ticker mentions.
+        Requires DISCORD_BOT_TOKEN + DISCORD_GUILD_IDS (comma-separated).
+        Only reads channels the bot has access to — no unauthorized scraping."""
+        ticker = ticker.upper()
+        bot_token = self.env.get("DISCORD_BOT_TOKEN")
+        guild_ids = [g.strip() for g in (self.env.get("DISCORD_GUILD_IDS") or "").split(",") if g.strip()]
+        if self.prefer_live and bot_token and guild_ids:
+            messages: list[dict] = []
+            for gid in guild_ids[:5]:  # cap at 5 guilds
+                # Search guild channels for ticker mentions
+                url = f"https://discord.com/api/v10/guilds/{gid}/messages/search?content=%24{ticker}+OR+{ticker}&limit=25"
+                status, data = self._http_json(url, {"Authorization": f"Bot {bot_token}"})
+                if status == 200 and isinstance(data, dict):
+                    for msg in (data.get("messages") or []):
+                        if isinstance(msg, list):
+                            msg = msg[0] if msg else {}
+                        if isinstance(msg, dict):
+                            messages.append(msg)
+            if messages:
+                return self._live(f"discord_{ticker}", 200, {"messages": messages}, None,
+                                  note=f"discord bot search {len(messages)} msgs across {len(guild_ids)} guild(s)")
+        return self._replay(f"discord_{ticker}", f"*/discord_*{ticker}*.json",
+                            note="discord unavailable; set DISCORD_BOT_TOKEN + DISCORD_GUILD_IDS")
+
+    def instagram_hashtag(self, ticker: str) -> Fetch:
+        """Instagram hashtag search via Firecrawl scraping (no Meta API key needed).
+        Falls back to replay if Firecrawl is unavailable."""
+        ticker = ticker.upper()
+        fc_key = self.env.get("FIRECRAWL_API_KEY")
+        if self.prefer_live and fc_key:
+            url = f"https://www.instagram.com/explore/tags/{ticker.lower()}/"
+            try:
+                api_url = "https://api.firecrawl.dev/v1/scrape"
+                body = json.dumps({"url": url, "formats": ["markdown"],
+                                   "waitFor": 3000}).encode()
+                req = urllib.request.Request(api_url, data=body, headers={
+                    "Authorization": f"Bearer {fc_key}",
+                    "Content-Type": "application/json",
+                    "User-Agent": "secfedclaw-watch/2.0"})
+                with urllib.request.urlopen(req, timeout=30) as r:
+                    data = json.loads(r.read())
+                    if r.status == 200 and data.get("success"):
+                        return self._live(f"instagram_{ticker}", 200, data,
+                                          redact(api_url), note=f"instagram #{ticker.lower()} via firecrawl")
+            except Exception:
+                pass
+        return self._replay(f"instagram_{ticker}", f"*/instagram_*{ticker}*.json",
+                            note="instagram unavailable")
+
+    def facebook_search(self, ticker: str) -> Fetch:
+        """Facebook public page search via Firecrawl. Targets stock discussion groups."""
+        ticker = ticker.upper()
+        fc_key = self.env.get("FIRECRAWL_API_KEY")
+        if self.prefer_live and fc_key:
+            url = f"https://www.facebook.com/search/posts/?q=%24{ticker}+stock"
+            try:
+                api_url = "https://api.firecrawl.dev/v1/scrape"
+                body = json.dumps({"url": url, "formats": ["markdown"],
+                                   "waitFor": 3000}).encode()
+                req = urllib.request.Request(api_url, data=body, headers={
+                    "Authorization": f"Bearer {fc_key}",
+                    "Content-Type": "application/json",
+                    "User-Agent": "secfedclaw-watch/2.0"})
+                with urllib.request.urlopen(req, timeout=30) as r:
+                    data = json.loads(r.read())
+                    if r.status == 200 and data.get("success"):
+                        return self._live(f"facebook_{ticker}", 200, data,
+                                          redact(api_url), note=f"facebook ${ticker} search via firecrawl")
+            except Exception:
+                pass
+        return self._replay(f"facebook_{ticker}", f"*/facebook_*{ticker}*.json",
+                            note="facebook unavailable")
+
+    def social_web_search(self, ticker: str) -> Fetch:
+        """Broad social-web search via Firecrawl: scrapes public stock forums,
+        investing.com discussions, and other social finance sites for ticker mentions.
+        Useful for catching promotion across platforms not directly integrated."""
+        ticker = ticker.upper()
+        fc_key = self.env.get("FIRECRAWL_API_KEY")
+        if self.prefer_live and fc_key:
+            # Search finance forums for the ticker
+            urls = [
+                f"https://www.google.com/search?q=%24{ticker}+stock+pump+promotion+site%3Areddit.com+OR+site%3Atwitter.com+OR+site%3Adiscord.com&tbs=qdr:w",
+            ]
+            for search_url in urls:
+                try:
+                    api_url = "https://api.firecrawl.dev/v1/scrape"
+                    body = json.dumps({"url": search_url, "formats": ["markdown"]}).encode()
+                    req = urllib.request.Request(api_url, data=body, headers={
+                        "Authorization": f"Bearer {fc_key}",
+                        "Content-Type": "application/json",
+                        "User-Agent": "secfedclaw-watch/2.0"})
+                    with urllib.request.urlopen(req, timeout=30) as r:
+                        data = json.loads(r.read())
+                        if r.status == 200 and data.get("success"):
+                            return self._live(f"social_web_{ticker}", 200, data,
+                                              redact(api_url), note=f"social web search ${ticker} via firecrawl")
+                except Exception:
+                    pass
+        return self._replay(f"social_web_{ticker}", f"*/social_web_*{ticker}*.json",
+                            note="social web search unavailable")
+
+    # ---- official/regulatory sources ------------------------------------
     def sec_submissions(self, cik10: str) -> Fetch:
         ua = self.env.get("SEC_USER_AGENT", "secfedclaw research robert.david.brown@gmail.com")
         if self.prefer_live and self.live_available_sec(ua):
