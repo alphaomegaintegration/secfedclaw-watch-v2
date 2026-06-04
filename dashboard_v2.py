@@ -498,6 +498,103 @@ def learning_panel() -> str:
         'The model is a calibration aid for human triage, nothing more.</p></div>')
 
 
+def network_graph_panel(packages: list[dict[str, Any]]) -> str:
+    """Build coordination network graph data from packages for force-directed viz."""
+    nodes: dict[str, dict] = {}
+    edges: list[dict] = []
+    for p in packages:
+        if not p:
+            continue
+        ticker = p.get("ticker", "?")
+        pri = p.get("review_priority", "LOW")
+        coord = p.get("coordination_detail", {})
+        sm = p.get("social_metrics", {})
+        cs = p.get("component_scores", {})
+        # Ticker node
+        nodes[ticker] = {"id": ticker, "type": "ticker", "group": pri,
+                         "score": p.get("watch_score", 0), "coord": cs.get("coordination_score", 0)}
+        # Platform nodes + edges
+        for plat in (sm.get("platforms") or []):
+            pid = f"plat_{plat}"
+            if pid not in nodes:
+                nodes[pid] = {"id": plat, "type": "platform", "group": "platform"}
+            edges.append({"source": ticker, "target": pid, "type": "posts_on"})
+        # Near-duplicate cluster nodes
+        for i, cluster in enumerate(coord.get("near_duplicate_clusters") or []):
+            cid = f"cluster_{ticker}_{i}"
+            nodes[cid] = {"id": f"cluster {i+1}", "type": "cluster", "group": "coordination",
+                          "size": cluster.get("size", len(cluster.get("members", [])))}
+            edges.append({"source": ticker, "target": cid, "type": "has_cluster"})
+        # Shared domain groups
+        for dom in (coord.get("shared_domain_groups") or []):
+            did = f"dom_{dom.get('domain', 'unknown')}"
+            if did not in nodes:
+                nodes[did] = {"id": dom.get("domain", "?"), "type": "domain", "group": "coordination"}
+            edges.append({"source": ticker, "target": did, "type": "shared_domain"})
+        # Source family edges
+        for fam in (p.get("corroboration", {}).get("families_active") or []):
+            fid = f"fam_{fam}"
+            if fid not in nodes:
+                nodes[fid] = {"id": fam, "type": "family", "group": "family"}
+            edges.append({"source": ticker, "target": fid, "type": "corroborates"})
+    # Serialize for JS
+    import json as _json
+    graph_data = _json.dumps({"nodes": list(nodes.values()), "edges": edges})
+    return (
+        '<p class="intro">Interactive coordination network showing tickers, platforms, near-duplicate clusters, '
+        'shared domains, and corroborating families. Larger nodes = higher scores. Drag to rearrange. '
+        'This is the same coordination evidence the scoring engine uses — visualized as a graph.</p>'
+        f'<div class="card"><div id="graph-container" style="width:100%;height:500px;position:relative;overflow:hidden">'
+        '<canvas id="graph-canvas" style="width:100%;height:100%"></canvas></div></div>'
+        '<div class="grid2">'
+        '<div class="card"><h3>Legend</h3>'
+        '<p class="small"><span style="color:#4da3ff">●</span> Ticker (size = watch score) &nbsp; '
+        '<span style="color:#3fb950">●</span> Platform &nbsp; '
+        '<span style="color:#d29922">●</span> Near-duplicate cluster &nbsp; '
+        '<span style="color:#b39ddb">●</span> Shared domain &nbsp; '
+        '<span style="color:#8b97a8">●</span> Corroborating family</p>'
+        '<p class="small muted">Lines show relationships: posts_on (social), has_cluster (coordination), '
+        'shared_domain (coordination), corroborates (multi-source).</p></div>'
+        '<div class="card"><h3>Graph stats</h3>'
+        f'<p class="small">{len(nodes)} nodes · {len(edges)} edges · '
+        f'{sum(1 for n in nodes.values() if n["type"]=="ticker")} tickers · '
+        f'{sum(1 for n in nodes.values() if n["type"]=="cluster")} clusters · '
+        f'{sum(1 for n in nodes.values() if n["type"]=="platform")} platforms</p></div></div>'
+        f'<script>var GRAPH_DATA={graph_data};'
+        'function initGraph(){'
+        'var c=document.getElementById("graph-canvas"),ctx=c.getContext("2d");'
+        'c.width=c.parentElement.clientWidth;c.height=c.parentElement.clientHeight;'
+        'var W=c.width,H=c.height,nodes=GRAPH_DATA.nodes,edges=GRAPH_DATA.edges;'
+        'var colors={ticker:"#4da3ff",platform:"#3fb950",cluster:"#d29922",domain:"#b39ddb",family:"#8b97a8"};'
+        'var priColors={CRITICAL_REVIEW:"#f85149",HIGH:"#d29922",MEDIUM:"#9ad13a",LOW:"#5a6b85"};'
+        'nodes.forEach(function(n,i){n.x=W/2+Math.cos(i*2.4)*W*0.3;n.y=H/2+Math.sin(i*2.4)*H*0.3;'
+        'n.vx=0;n.vy=0;n.r=n.type=="ticker"?Math.max(8,Math.min(25,(n.score||0)/3)):6;});'
+        'var nMap={};nodes.forEach(function(n){nMap[n.id]=n;});'
+        'function step(){'
+        'nodes.forEach(function(a){nodes.forEach(function(b){if(a===b)return;'
+        'var dx=a.x-b.x,dy=a.y-b.y,d=Math.sqrt(dx*dx+dy*dy)+1;'
+        'var f=200/(d*d);a.vx+=dx/d*f;a.vy+=dy/d*f;});});'
+        'edges.forEach(function(e){var s=nMap[e.source]||nMap[e.target],t=nMap[e.target]||nMap[e.source];'
+        'if(!s||!t)return;var dx=t.x-s.x,dy=t.y-s.y,d=Math.sqrt(dx*dx+dy*dy)+1;'
+        'var f=(d-80)*0.01;s.vx+=dx/d*f;s.vy+=dy/d*f;t.vx-=dx/d*f;t.vy-=dy/d*f;});'
+        'nodes.forEach(function(n){n.vx*=0.85;n.vy*=0.85;n.x+=n.vx;n.y+=n.vy;'
+        'n.x=Math.max(n.r,Math.min(W-n.r,n.x));n.y=Math.max(n.r,Math.min(H-n.r,n.y));});'
+        'ctx.clearRect(0,0,W,H);'
+        'edges.forEach(function(e){var s=nMap[e.source],t=nMap[e.target];if(!s||!t)return;'
+        'ctx.beginPath();ctx.moveTo(s.x,s.y);ctx.lineTo(t.x,t.y);'
+        'ctx.strokeStyle="rgba(74,109,138,0.3)";ctx.lineWidth=1;ctx.stroke();});'
+        'nodes.forEach(function(n){ctx.beginPath();ctx.arc(n.x,n.y,n.r,0,Math.PI*2);'
+        'ctx.fillStyle=n.type=="ticker"?(priColors[n.group]||colors.ticker):colors[n.type]||"#888";'
+        'ctx.fill();ctx.strokeStyle="rgba(255,255,255,0.2)";ctx.lineWidth=0.5;ctx.stroke();'
+        'ctx.fillStyle="#e0e8f0";ctx.font=(n.type=="ticker"?"bold ":"")+"10px sans-serif";'
+        'ctx.textAlign="center";ctx.fillText(n.id,n.x,n.y+n.r+12);});'
+        'requestAnimationFrame(step);}step();}'
+        'document.addEventListener("DOMContentLoaded",function(){'
+        'document.querySelector(\'[data-id="network"]\').addEventListener("click",function(){'
+        'setTimeout(initGraph,100);});});'
+        '</script>')
+
+
 def backtest_panel(bt: dict[str, Any]) -> str:
     if not bt:
         return '<p class="muted">No backtest results. Run backtest.py.</p>'
@@ -632,7 +729,8 @@ def build_html(queue: dict, packages: list, bt: dict) -> str:
     mode = queue.get("data_mode", "?")
     n_pkg = len([p for p in packages if p])
     tabs = (_tab("Overview", "overview", True) + _tab("Packages", "packages")
-            + _tab("Agents", "agents") + _tab("Learning", "learning") + _tab("Status", "status")
+            + _tab("Network", "network") + _tab("Agents", "agents")
+            + _tab("Learning", "learning") + _tab("Status", "status")
             + _tab("LLM cost", "llm") + _tab("Methodology", "methodology")
             + _tab("SEC case studies", "cases") + _tab("Backtest", "backtest"))
     return (
@@ -662,6 +760,9 @@ def build_html(queue: dict, packages: list, bt: dict) -> str:
         "<p class='intro'>Each package shows component scores (hover ⓘ), active families, caps applied, coordination "
         "clusters, the adversary's caveats, the optional model advisory, and a non-accusatory rationale.</p>"
         f"{package_cards([p for p in packages if p])}</section>"
+        # network graph
+        f"<section id='network' class='panel'><h2>Coordination network</h2>"
+        f"{network_graph_panel([p for p in packages if p])}</section>"
         # agents
         f"<section id='agents' class='panel'><h2>Agents &amp; orchestration</h2>{agents_panel(queue)}</section>"
         # learning
