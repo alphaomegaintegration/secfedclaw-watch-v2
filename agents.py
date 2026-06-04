@@ -87,6 +87,9 @@ class ScoutAgent:
             "instagram": c.instagram_hashtag(ticker),
             "facebook": c.facebook_search(ticker),
             "social_web": c.social_web_search(ticker),
+            "fmp_quote": c.fmp_quote(ticker),
+            "fmp_profile": c.fmp_profile(ticker),
+            "fmp_historical": c.fmp_historical(ticker),
         }
         # Reddit availability depends on OAuth creds + reachability; reflect it.
         fetches["reddit_unavailable"] = not fetches["reddit"].ok()

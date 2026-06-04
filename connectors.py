@@ -433,6 +433,51 @@ class DataConnector:
         return self._replay(f"social_web_{ticker}", f"*/social_web_*{ticker}*.json",
                             note="social web search unavailable")
 
+    # ---- FMP (Financial Modeling Prep) ------------------------------------
+    def fmp_quote(self, ticker: str) -> Fetch:
+        """Real-time stock quote from FMP (stable API). Provides price, volume,
+        market cap, P/E, day range, year range — complements Polygon snapshot."""
+        ticker = ticker.upper()
+        fmp_key = self.env.get("FMP_API_KEY")
+        if fmp_key and self.prefer_live:
+            url = f"https://financialmodelingprep.com/stable/quote?symbol={ticker}&apikey={fmp_key}"
+            status, data = self._http_json(url)
+            if status == 200 and data:
+                return self._live(f"fmp_quote_{ticker}", status, data, redact(url), note="FMP real-time quote")
+        return self._replay(f"fmp_quote_{ticker}", f"*/fmp_quote_{ticker}*.json",
+                            note="FMP quote unavailable; set FMP_API_KEY")
+
+    def fmp_profile(self, ticker: str) -> Fetch:
+        """Company profile from FMP: sector, industry, market cap, description,
+        CEO, employees, IPO date. Enriches issuer context."""
+        ticker = ticker.upper()
+        fmp_key = self.env.get("FMP_API_KEY")
+        if fmp_key and self.prefer_live:
+            url = f"https://financialmodelingprep.com/stable/profile?symbol={ticker}&apikey={fmp_key}"
+            status, data = self._http_json(url)
+            if status == 200 and data:
+                return self._live(f"fmp_profile_{ticker}", status, data, redact(url), note="FMP company profile")
+        return self._replay(f"fmp_profile_{ticker}", f"*/fmp_profile_{ticker}*.json",
+                            note="FMP profile unavailable")
+
+    def fmp_historical(self, ticker: str, days: int = 90) -> Fetch:
+        """Historical daily prices from FMP (up to 30 years). Provides OHLCV + VWAP
+        + change%. Alternative/complement to Polygon daily range."""
+        ticker = ticker.upper()
+        fmp_key = self.env.get("FMP_API_KEY")
+        if fmp_key and self.prefer_live:
+            import time as _t
+            end = _t.strftime("%Y-%m-%d")
+            start = _t.strftime("%Y-%m-%d", _t.gmtime(_t.time() - days * 86400))
+            url = (f"https://financialmodelingprep.com/stable/historical-price-eod/full"
+                   f"?symbol={ticker}&from={start}&to={end}&apikey={fmp_key}")
+            status, data = self._http_json(url)
+            if status == 200 and data:
+                return self._live(f"fmp_historical_{ticker}", status, data, redact(url),
+                                  note=f"FMP {days}d historical daily")
+        return self._replay(f"fmp_historical_{ticker}", f"*/fmp_historical_{ticker}*.json",
+                            note="FMP historical unavailable")
+
     # ---- official/regulatory sources ------------------------------------
     def sec_submissions(self, cik10: str) -> Fetch:
         ua = self.env.get("SEC_USER_AGENT", "secfedclaw research robert.david.brown@gmail.com")
