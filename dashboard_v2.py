@@ -865,7 +865,7 @@ tbody tr:hover{background:#f5f7fb}
 .bar{position:relative;background:var(--panel);border:1px solid var(--line);border-radius:3px;height:18px;min-width:130px;overflow:hidden}
 .bar-fill{position:absolute;inset:0 auto 0 0;background:linear-gradient(90deg,#00571a,#00a91c)}
 .bar-fill.anom{background:linear-gradient(90deg,#7a2700,#c05600)}
-.bar-num{position:relative;padding-left:8px;font-size:11.5px;line-height:18px;color:var(--ink);font-weight:600}
+.bar-num{position:relative;padding-left:8px;font-size:11.5px;line-height:18px;color:#fff;font-weight:700;text-shadow:0 0 3px rgba(0,0,0,.5)}
 
 /* === KPI TILES === */
 .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:var(--s3);margin-bottom:var(--s4)}
