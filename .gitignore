@@ -46,3 +46,4 @@ flatfiles/
 logs/
 # live custody cache
 live_cache/
+.gstack/
