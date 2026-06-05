@@ -819,15 +819,26 @@ a:focus-visible{outline:3px solid var(--brand);outline-offset:2px;border-radius:
 .meta{margin-left:auto;color:rgba(255,255,255,.6);font-size:12px}
 .boundary{margin-top:var(--s3);background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.18);color:#ffe8b0;border-radius:var(--radius);padding:var(--s2) var(--s3);font-size:12.5px}
 
-/* === LAYOUT === */
-.wrap{max-width:1180px;margin:0 auto;padding:var(--s5)}
-
-/* === TABS (USWDS-style tab bar) === */
-.tabs{display:flex;gap:0;flex-wrap:wrap;margin-bottom:var(--s5);border-bottom:2px solid var(--brand)}
-.tab{padding:9px var(--s4);background:transparent;border:1px solid transparent;border-bottom:none;cursor:pointer;font-weight:600;font-size:14px;color:var(--muted);border-radius:var(--radius) var(--radius) 0 0;transition:background .1s,color .1s;margin-right:2px}
-.tab:hover{color:var(--brand);background:var(--brand-light)}
-.tab.active{background:var(--brand);color:#fff;border-color:var(--brand)}
+/* === SIDEBAR NAV (drawer/cabinet) === */
+:root{--sidebar-w:220px;--sidebar-collapsed:48px}
+.sidebar{position:fixed;left:0;top:0;bottom:0;width:var(--sidebar-w);background:var(--header-bg);border-right:3px solid var(--accent);z-index:20;display:flex;flex-direction:column;transition:width .2s ease;overflow:hidden}
+.sidebar.collapsed{width:var(--sidebar-collapsed)}
+.sidebar-header{display:flex;align-items:center;justify-content:flex-end;padding:var(--s3) var(--s2);border-bottom:1px solid rgba(255,255,255,.15);min-height:52px;flex-shrink:0}
+.sidebar-toggle{background:none;border:none;cursor:pointer;color:rgba(255,255,255,.8);padding:6px;border-radius:var(--radius);line-height:1;font-size:18px;width:36px;text-align:center;transition:background .1s}
+.sidebar-toggle:hover{background:rgba(255,255,255,.12);color:#fff}
+.tabs{display:flex;flex-direction:column;gap:2px;padding:var(--s2);overflow-y:auto;flex:1}
+.tab{padding:9px var(--s3);background:transparent;border:1px solid transparent;border-radius:var(--radius);cursor:pointer;font-weight:600;font-size:13.5px;color:rgba(255,255,255,.7);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;transition:background .1s,color .1s;text-align:left;width:100%}
+.tab:hover{color:#fff;background:rgba(255,255,255,.1)}
+.tab.active{background:rgba(255,255,255,.18);color:#fff;border-color:rgba(255,255,255,.25)}
+.sidebar.collapsed .tab{padding:9px;text-align:center;font-size:0;overflow:visible}
+.sidebar.collapsed .tab::before{font-size:16px;display:block}
 .panel{display:none;animation:f .15s ease} .panel.active{display:block} @keyframes f{from{opacity:.5}to{opacity:1}}
+
+/* === LAYOUT (content shifts right for sidebar) === */
+.page-shell{margin-left:var(--sidebar-w);transition:margin-left .2s ease}
+.page-shell.nav-collapsed{margin-left:var(--sidebar-collapsed)}
+.wrap{max-width:1180px;margin:0 auto;padding:var(--s5)}
+@media(max-width:760px){.sidebar{width:var(--sidebar-collapsed)}.page-shell{margin-left:var(--sidebar-collapsed)}}
 .intro{color:var(--muted);max-width:80ch;margin:0 0 var(--s4);font-size:14.5px;line-height:1.65}
 
 /* === TYPOGRAPHY === */
@@ -925,8 +936,22 @@ document.getElementById(id).classList.add('active');el.classList.add('active');
 if(history.replaceState)history.replaceState(null,'','#'+id);}
 function filt(p){document.querySelectorAll('#overview [data-priority]').forEach(r=>{
 r.style.display=(p==='ALL'||r.getAttribute('data-priority')===p)?'':'none';});}
-window.addEventListener('DOMContentLoaded',function(){var h=location.hash.slice(1);
-if(h){var t=document.querySelector('.tab[data-id="'+h+'"]');if(t)t.click();}});
+function toggleNav(){
+  var s=document.getElementById('sidebar'),ps=document.getElementById('pageShell');
+  var c=s.classList.toggle('collapsed');
+  ps.classList.toggle('nav-collapsed',c);
+  document.getElementById('navToggle').textContent=c?'☰':'✕';
+  try{localStorage.setItem('navCollapsed',c?'1':'0');}catch(e){}
+}
+window.addEventListener('DOMContentLoaded',function(){
+  var h=location.hash.slice(1);
+  if(h){var t=document.querySelector('.tab[data-id="'+h+'"]');if(t)t.click();}
+  try{if(localStorage.getItem('navCollapsed')==='1'){
+    document.getElementById('sidebar').classList.add('collapsed');
+    document.getElementById('pageShell').classList.add('nav-collapsed');
+    document.getElementById('navToggle').textContent='☰';
+  }}catch(e){}
+});
 """
 
 
@@ -949,6 +974,15 @@ def build_html(queue: dict, packages: list, bt: dict) -> str:
         "<meta name='viewport' content='width=device-width,initial-scale=1'>"
         "<title>SECFEDCLAW v0.2 — Surveillance Review Console</title>"
         f"<style>{CSS}</style></head><body>"
+        # Sidebar nav drawer
+        "<nav id='sidebar' class='sidebar'>"
+        "<div class='sidebar-header'>"
+        "<button id='navToggle' class='sidebar-toggle' onclick='toggleNav()' title='Toggle navigation'>&#10005;</button>"
+        "</div>"
+        f"<div class='tabs'>{tabs}</div>"
+        "</nav>"
+        # Page shell (shifts right of sidebar)
+        "<div id='pageShell' class='page-shell'>"
         "<div class='govbanner'><div class='govbanner-inner'>"
         "&#127482;&#127480;&nbsp;"
         "<span>An official surveillance review tool — WATCH context only, not enforcement.</span>"
@@ -958,7 +992,7 @@ def build_html(queue: dict, packages: list, bt: dict) -> str:
         "<span class='subtitle'>Pump-and-dump WATCH · Social × Market × SEC/FINRA fusion</span>"
         f"<span class='meta'>{esc(gen)} · {esc(mode)} · {n_pkg} packages</span></div>"
         f"<div class='boundary'>&#9888; {esc(BOUNDARY)}</div></div>"
-        f"<div class='wrap'><div class='tabs'>{tabs}</div>"
+        "<div class='wrap'>"
         # overview
         "<section id='overview' class='panel active'>"
         "<p class='intro'>Tickers ranked by review priority for this run. Numbers are review-priority context — hover ⓘ for "
@@ -996,7 +1030,7 @@ def build_html(queue: dict, packages: list, bt: dict) -> str:
         f"<section id='backtest' class='panel'><h2>Backtest &amp; calibration</h2>{backtest_panel(bt)}</section>"
         "<div class='footer'>SECFEDCLAW v0.2 · WATCH-level review priorities only · offline render, no external callbacks · "
         "outbound ticker links open third-party sites on click.</div>"
-        f"</div><script>{JS}</script></body></html>")
+        f"</div></div><script>{JS}</script></body></html>")
 
 
 def main() -> int:
