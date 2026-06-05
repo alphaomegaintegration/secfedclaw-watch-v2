@@ -783,83 +783,139 @@ def backtest_panel(bt: dict[str, Any]) -> str:
 
 
 CSS = """
+/* USWDS + SEC.gov design system — Public Sans typography, federal navy header */
 :root{
-  --bg:#0d1117; --panel:#161b22; --panel-2:#1c2330; --line:#2a3441; --line-2:#384252;
-  --ink:#e9edf3; --muted:#8b97a8; --faint:#6b7686; --brand:#4da3ff; --accent:#c98a3a;
-  --ok:#3fb950; --crit:#f85149; --high:#d29922; --med:#9ad13a; --low:#5a6b85;
-  --s1:4px; --s2:8px; --s3:12px; --s4:16px; --s5:24px; --s6:32px; --radius:12px;
-  --shadow:0 1px 3px rgba(0,0,0,.4);
-  --f: -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  /* USWDS color tokens (light theme) */
+  --bg:#ffffff; --panel:#f0f0f0; --panel-2:#e8f0f8; --line:#dfe1e2; --line-2:#a9aeb1;
+  --ink:#1b1b1b; --muted:#555f6b; --faint:#71767a;
+  --brand:#005ea2; --brand-dark:#1a4480; --brand-light:#d9e8f6;
+  --accent:#c9a227; --accent-bg:#faf3d1;
+  /* USWDS semantic status colors */
+  --ok:#00a91c; --ok-bg:#ecf3ec; --crit:#b50909; --crit-bg:#fff3ee;
+  --high:#c05600; --high-bg:#fef0e8; --med:#276130; --med-bg:#edf5ee; --low:#555f6b; --low-bg:#f0f0f0;
+  /* SEC.gov header navy */
+  --header-bg:#17375e; --header-ink:#ffffff;
+  --s1:4px; --s2:8px; --s3:12px; --s4:16px; --s5:24px; --s6:32px;
+  --radius:4px; --shadow:0 1px 3px rgba(0,0,0,.12);
+  /* Public Sans (USWDS default) → Source Sans Pro → system */
+  --f:"Public Sans","Source Sans Pro",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
 }
-*{box-sizing:border-box} html{scroll-behavior:smooth}
-body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.55 var(--f);-webkit-font-smoothing:antialiased}
+*{box-sizing:border-box} html{scroll-behavior:smooth;color-scheme:light}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.6 var(--f);-webkit-font-smoothing:antialiased}
 a{color:var(--brand);text-decoration:none} a:hover{text-decoration:underline}
-.topbar{background:linear-gradient(180deg,#1a2230,#11161f);border-bottom:1px solid var(--line);padding:var(--s4) var(--s5);position:sticky;top:0;z-index:10}
-.brand-row{display:flex;align-items:baseline;gap:var(--s3);flex-wrap:wrap}
-.brand{font-weight:800;letter-spacing:.4px;font-size:20px}
-.brand .v{color:var(--brand)}
-.subtitle{color:var(--muted);font-size:13px}
-.meta{margin-left:auto;color:var(--faint);font-size:12px}
-.boundary{margin-top:var(--s3);background:#21161a;border:1px solid #5b2a2f;color:#ffc9cd;border-radius:8px;padding:var(--s2) var(--s3);font-size:12.5px}
+a:focus-visible{outline:3px solid var(--brand);outline-offset:2px;border-radius:2px}
+
+/* === GOVERNMENT BANNER (USWDS usa-banner pattern) === */
+.govbanner{background:#f0f0f0;border-bottom:1px solid #dfe1e2;padding:6px var(--s5);font-size:12px;color:#555f6b}
+.govbanner-inner{max-width:1180px;margin:0 auto;display:flex;align-items:center;gap:6px}
+.govbanner span{font-weight:600}
+
+/* === HEADER (SEC.gov navy) === */
+.topbar{background:var(--header-bg);border-bottom:4px solid var(--accent);padding:var(--s4) var(--s5);position:sticky;top:0;z-index:10}
+.brand-row{display:flex;align-items:center;gap:var(--s3);flex-wrap:wrap}
+.brand{font-weight:800;letter-spacing:.3px;font-size:20px;color:var(--header-ink);text-transform:uppercase}
+.brand .v{color:#d9e8f6;font-weight:400;font-size:13px;text-transform:none;letter-spacing:0}
+.subtitle{color:rgba(255,255,255,.75);font-size:13px;font-weight:400}
+.meta{margin-left:auto;color:rgba(255,255,255,.6);font-size:12px}
+.boundary{margin-top:var(--s3);background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.18);color:#ffe8b0;border-radius:var(--radius);padding:var(--s2) var(--s3);font-size:12.5px}
+
+/* === LAYOUT === */
 .wrap{max-width:1180px;margin:0 auto;padding:var(--s5)}
-.tabs{display:flex;gap:var(--s2);flex-wrap:wrap;margin-bottom:var(--s5);border-bottom:1px solid var(--line);padding-bottom:var(--s3)}
-.tab{padding:var(--s2) var(--s4);background:transparent;border:1px solid transparent;border-radius:8px;cursor:pointer;font-weight:600;color:var(--muted)}
-.tab:hover{color:var(--ink);background:var(--panel)}
-.tab.active{background:var(--panel-2);color:#cfe4ff;border-color:var(--line-2)}
-.panel{display:none;animation:f .2s ease} .panel.active{display:block} @keyframes f{from{opacity:.4}to{opacity:1}}
-.intro{color:var(--muted);max-width:80ch;margin:0 0 var(--s4)}
-h2{font-size:19px;margin:0 0 var(--s4)} h3{font-size:15px;margin:0 0 var(--s3)}
-.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:var(--s4);margin-bottom:var(--s4);box-shadow:var(--shadow)}
+
+/* === TABS (USWDS-style tab bar) === */
+.tabs{display:flex;gap:0;flex-wrap:wrap;margin-bottom:var(--s5);border-bottom:2px solid var(--brand)}
+.tab{padding:9px var(--s4);background:transparent;border:1px solid transparent;border-bottom:none;cursor:pointer;font-weight:600;font-size:14px;color:var(--muted);border-radius:var(--radius) var(--radius) 0 0;transition:background .1s,color .1s;margin-right:2px}
+.tab:hover{color:var(--brand);background:var(--brand-light)}
+.tab.active{background:var(--brand);color:#fff;border-color:var(--brand)}
+.panel{display:none;animation:f .15s ease} .panel.active{display:block} @keyframes f{from{opacity:.5}to{opacity:1}}
+.intro{color:var(--muted);max-width:80ch;margin:0 0 var(--s4);font-size:14.5px;line-height:1.65}
+
+/* === TYPOGRAPHY === */
+h2{font-size:22px;font-weight:700;margin:0 0 var(--s4);color:var(--ink)}
+h3{font-size:16px;font-weight:700;margin:0 0 var(--s3);color:var(--ink)}
+
+/* === CARDS === */
+.card{background:var(--bg);border:1px solid var(--line);border-radius:var(--radius);padding:var(--s4);margin-bottom:var(--s4);box-shadow:var(--shadow)}
+
+/* === TABLES (USWDS usa-table pattern) === */
 table{width:100%;border-collapse:collapse}
-th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:middle}
-thead th{color:var(--muted);font-size:11.5px;text-transform:uppercase;letter-spacing:.5px;font-weight:700}
+th,td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:middle}
+thead th{color:var(--muted);font-size:11.5px;text-transform:uppercase;letter-spacing:.5px;font-weight:700;background:var(--panel);border-bottom:2px solid var(--line-2)}
+tbody tr:hover{background:#f5f7fb}
 .num{text-align:right;font-variant-numeric:tabular-nums} .muted{color:var(--muted)} .faint{color:var(--faint)} .small{font-size:13px}
 .tk{white-space:nowrap}
 .reflinks{display:inline-flex;gap:6px;margin-left:8px}
-.reflinks a{font-size:10.5px;font-weight:700;color:var(--faint);border:1px solid var(--line-2);border-radius:5px;padding:1px 5px}
-.reflinks a:hover{color:#cfe4ff;border-color:var(--brand);text-decoration:none}
-.pill{display:inline-block;padding:2px 10px;border-radius:99px;font-size:12px;font-weight:700}
-.pill.crit{background:#3d1417;color:#ff9ba0} .pill.high{background:#3a2c10;color:#f0c14b}
-.pill.med{background:#26340f;color:#cdee85} .pill.low{background:#1b2435;color:#9fb0cc}
+.reflinks a{font-size:10.5px;font-weight:700;color:var(--brand);border:1px solid var(--line-2);border-radius:3px;padding:1px 5px;background:var(--bg)}
+.reflinks a:hover{background:var(--brand);color:#fff;border-color:var(--brand);text-decoration:none}
+
+/* === PRIORITY PILLS (USWDS semantic + accessible on white) === */
+.pill{display:inline-block;padding:2px 10px;border-radius:99px;font-size:12px;font-weight:700;letter-spacing:.2px}
+.pill.crit{background:var(--crit-bg);color:var(--crit);border:1px solid #e59393}
+.pill.high{background:var(--high-bg);color:var(--high);border:1px solid #f0ab70}
+.pill.med{background:var(--med-bg);color:var(--med);border:1px solid #86c387}
+.pill.low{background:var(--low-bg);color:var(--low);border:1px solid var(--line-2)}
+
+/* === INFO TOOLTIP === */
 .info{display:inline-block;width:17px;height:17px;line-height:17px;text-align:center;border-radius:50%;background:var(--brand);color:#fff;font-size:10px;font-weight:700;cursor:help;margin-left:4px;position:relative;vertical-align:middle}
-.info .tooltip{display:none;position:absolute;bottom:calc(100% + 8px);left:50%;transform:translateX(-50%);background:#1c2a3a;color:#e0e8f0;border:1px solid var(--brand);border-radius:8px;padding:10px 14px;font-size:13px;font-weight:400;line-height:1.45;width:320px;max-width:90vw;white-space:normal;text-align:left;z-index:100;box-shadow:0 4px 16px rgba(0,0,0,.5);pointer-events:none}
-.info .tooltip::after{content:'';position:absolute;top:100%;left:50%;transform:translateX(-50%);border:6px solid transparent;border-top-color:var(--brand)}
+.info .tooltip{display:none;position:absolute;bottom:calc(100% + 8px);left:50%;transform:translateX(-50%);background:#fff;color:var(--ink);border:1px solid var(--line-2);box-shadow:0 4px 12px rgba(0,0,0,.15);border-radius:var(--radius);padding:10px 14px;font-size:13px;font-weight:400;line-height:1.5;width:320px;max-width:90vw;white-space:normal;text-align:left;z-index:100;pointer-events:none}
+.info .tooltip::after{content:'';position:absolute;top:100%;left:50%;transform:translateX(-50%);border:6px solid transparent;border-top-color:var(--line-2)}
 .info:hover .tooltip,.info:focus .tooltip{display:block}
-.bar{position:relative;background:#0f1623;border:1px solid var(--line);border-radius:6px;height:18px;min-width:130px;overflow:hidden}
-.bar-fill{position:absolute;inset:0 auto 0 0;background:linear-gradient(90deg,#2f6f3f,#3fb950)}
-.bar-fill.anom{background:linear-gradient(90deg,#7a4a1f,#d29922)}
-.bar-num{position:relative;padding-left:8px;font-size:11.5px;line-height:18px;color:#dfe6ef}
+
+/* === SCORE BARS === */
+.bar{position:relative;background:var(--panel);border:1px solid var(--line);border-radius:3px;height:18px;min-width:130px;overflow:hidden}
+.bar-fill{position:absolute;inset:0 auto 0 0;background:linear-gradient(90deg,#00571a,#00a91c)}
+.bar-fill.anom{background:linear-gradient(90deg,#7a2700,#c05600)}
+.bar-num{position:relative;padding-left:8px;font-size:11.5px;line-height:18px;color:var(--ink);font-weight:600}
+
+/* === KPI TILES === */
 .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:var(--s3);margin-bottom:var(--s4)}
-.kpi{background:var(--panel-2);border:1px solid var(--line);border-radius:10px;padding:var(--s3) var(--s4)}
-.kpi-num{font-size:24px;font-weight:800;color:#cfe4ff} .kpi-lbl{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px}
+.kpi{background:var(--bg);border:1px solid var(--line);border-top:3px solid var(--brand);border-radius:var(--radius);padding:var(--s3) var(--s4);box-shadow:var(--shadow)}
+.kpi-num{font-size:24px;font-weight:700;color:var(--brand)}
+.kpi-lbl{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-top:2px}
 .kpi-sub{font-size:11px;color:var(--faint);margin-top:2px}
-.filters{margin:0 0 var(--s3);display:flex;gap:6px;flex-wrap:wrap}
-.filters button{background:var(--panel-2);border:1px solid var(--line-2);color:#cde;border-radius:6px;padding:5px 11px;cursor:pointer;font-weight:600}
-.filters button:hover{border-color:var(--brand)}
+
+/* === FILTER BUTTONS === */
+.filters{margin:0 0 var(--s3);display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.filters button{background:var(--bg);border:1px solid var(--line-2);color:var(--muted);border-radius:3px;padding:5px 12px;cursor:pointer;font-weight:600;font-size:13px;transition:all .1s}
+.filters button:hover{border-color:var(--brand);color:var(--brand);background:var(--brand-light)}
 .mini td,.mini th{padding:5px 8px;font-size:12.5px}
-.cm .tp{color:#7ee787}.cm .tn{color:#9cd2ff}.cm .fp{color:#ffba73}.cm .fn{color:#ff9ba0}
+
+/* === CONFUSION MATRIX === */
+.cm .tp{color:#00571a;font-weight:700}.cm .tn{color:#005ea2;font-weight:700}.cm .fp{color:#c05600;font-weight:700}.cm .fn{color:#b50909;font-weight:700}
+
+/* === GRID LAYOUTS === */
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:var(--s4)} @media(max-width:760px){.grid2{grid-template-columns:1fr}}
+
+/* === PACKAGE CARDS === */
 .pkg-head{display:flex;align-items:center;gap:var(--s3);flex-wrap:wrap;margin-bottom:var(--s2)}
-.warn{color:#ffba73}.adv{color:#9cd2ff}.model{color:#b39ddb}.enf{color:#e0a3c9}
-.expl{background:var(--panel-2);border-left:3px solid var(--brand);border-radius:6px;padding:8px 10px;color:#cdd8e6}
-.rationale{color:#aeb8cc;border-top:1px dashed var(--line);padding-top:var(--s2);margin-top:var(--s2)}
+.warn{color:var(--high);font-weight:600}.adv{color:var(--brand)}.model{color:#6b48a8}.enf{color:#8b2d5e}
+.expl{background:var(--brand-light);border-left:3px solid var(--brand);border-radius:var(--radius);padding:8px 10px;color:var(--ink)}
+.rationale{color:var(--muted);border-top:1px dashed var(--line);padding-top:var(--s2);margin-top:var(--s2)}
+
+/* === STATUS DOTS === */
 .dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px;vertical-align:middle}
-.dot.ok{background:var(--ok)}.dot.warn-d{background:var(--high)}.dot.bad{background:var(--crit)}.dot.idle{background:var(--low)}
+.dot.ok{background:var(--ok)}.dot.warn-d{background:#e5a000}.dot.bad{background:#d54309}.dot.idle{background:var(--low)}
 .agent-state{font-size:12px;font-weight:700;margin:2px 0 6px}
+
+/* === PIPELINE STAGES === */
 .pipeline{display:flex;align-items:stretch;gap:var(--s2);flex-wrap:wrap;margin-bottom:var(--s4)}
-.stage{flex:1;min-width:200px;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:var(--s4);position:relative}
-.stage-num{font-size:11px;font-weight:800;color:var(--brand);letter-spacing:1px}
-.stage .tag{display:inline-block;font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--accent);background:#2a2012;border:1px solid #4a3a1e;border-radius:5px;padding:1px 7px;margin-bottom:var(--s2)}
+.stage{flex:1;min-width:200px;background:var(--bg);border:1px solid var(--line);border-top:3px solid var(--brand);border-radius:var(--radius);padding:var(--s4);position:relative}
+.stage-num{font-size:11px;font-weight:800;color:var(--brand);letter-spacing:1px;text-transform:uppercase}
+.stage .tag{display:inline-block;font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:#6b3600;background:var(--high-bg);border:1px solid #f0ab70;border-radius:3px;padding:1px 7px;margin-bottom:var(--s2)}
 .stage .out{color:var(--muted);border-top:1px dashed var(--line);padding-top:var(--s2);margin-top:var(--s2)}
-.arrow{display:flex;align-items:center;color:var(--line-2);font-size:22px;font-weight:700}
+.arrow{display:flex;align-items:center;color:var(--brand);font-size:22px;font-weight:700}
 @media(max-width:760px){.arrow{display:none}.stage{min-width:100%}}
+
+/* === BANDS & CASES === */
 .bands{display:flex;gap:var(--s2);flex-wrap:wrap;margin-bottom:var(--s2)}
 .cases{display:grid;grid-template-columns:1fr 1fr;gap:var(--s4)} @media(max-width:760px){.cases{grid-template-columns:1fr}}
 .case-head{display:flex;justify-content:space-between;align-items:baseline;gap:var(--s2)}
 .case .src{font-size:11px;font-weight:700;color:var(--brand);white-space:nowrap}
-.case .thr{color:#cdee85}.case .train{color:#b39ddb}
-.worked{border-color:#3a4a1e}
-.footer{color:var(--faint);font-size:12px;text-align:center;padding:var(--s5) 0}
+.case .thr{color:var(--med);font-weight:600}.case .train{color:#6b48a8;font-weight:600}
+.worked{border-top-color:var(--med)!important}
+
+/* === FOOTER === */
+.footer{color:var(--faint);font-size:12px;text-align:center;padding:var(--s5) 0;border-top:1px solid var(--line);margin-top:var(--s4)}
 """
 
 JS = """
@@ -891,13 +947,17 @@ def build_html(queue: dict, packages: list, bt: dict) -> str:
     return (
         "<!doctype html><html lang='en'><head><meta charset='utf-8'>"
         "<meta name='viewport' content='width=device-width,initial-scale=1'>"
-        "<title>SECFEDCLAW v0.2 — surveillance review console</title>"
+        "<title>SECFEDCLAW v0.2 — Surveillance Review Console</title>"
         f"<style>{CSS}</style></head><body>"
+        "<div class='govbanner'><div class='govbanner-inner'>"
+        "&#127482;&#127480;&nbsp;"
+        "<span>An official surveillance review tool — WATCH context only, not enforcement.</span>"
+        "</div></div>"
         "<div class='topbar'><div class='brand-row'>"
         "<span class='brand'>SECFEDCLAW <span class='v'>v0.2</span></span>"
-        "<span class='subtitle'>Pump-and-dump WATCH review console — social × market × SEC/FINRA fusion</span>"
-        f"<span class='meta'>generated {esc(gen)} · mode {esc(mode)} · {n_pkg} packages</span></div>"
-        f"<div class='boundary'><b>⚠ {esc(BOUNDARY)}</b></div></div>"
+        "<span class='subtitle'>Pump-and-dump WATCH · Social × Market × SEC/FINRA fusion</span>"
+        f"<span class='meta'>{esc(gen)} · {esc(mode)} · {n_pkg} packages</span></div>"
+        f"<div class='boundary'>&#9888; {esc(BOUNDARY)}</div></div>"
         f"<div class='wrap'><div class='tabs'>{tabs}</div>"
         # overview
         "<section id='overview' class='panel active'>"
