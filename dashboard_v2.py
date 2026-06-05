@@ -801,7 +801,7 @@ CSS = """
   --f:"Public Sans","Source Sans Pro",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
 }
 *{box-sizing:border-box} html{scroll-behavior:smooth;color-scheme:light}
-body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.6 var(--f);-webkit-font-smoothing:antialiased}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.6 var(--f);-webkit-font-smoothing:antialiased}
 a{color:var(--brand);text-decoration:none} a:hover{text-decoration:underline}
 a:focus-visible{outline:3px solid var(--brand);outline-offset:2px;border-radius:2px}
 
