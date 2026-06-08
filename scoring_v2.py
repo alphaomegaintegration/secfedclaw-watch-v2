@@ -96,6 +96,7 @@ def build_package(ticker: str, fetches: dict[str, Any]) -> dict[str, Any]:
         fetches["x"].data if fetches.get("x") else None,
         fetches["reddit"].data if fetches.get("reddit") else None,
         fetches["stocktwits"].data if fetches.get("stocktwits") else None,
+        discord_fetch_data=fetches["discord"].data if fetches.get("discord") else None,
         imported_posts=(fetches.get("social_import")
                         if isinstance(fetches.get("social_import"), list)
                         else social_import.load_authorized(ticker)),

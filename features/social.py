@@ -30,6 +30,7 @@ _CASHTAG_RE = re.compile(r"\$[A-Za-z]{1,6}\b")
 
 def normalize_posts(x_fetch_data: Any, reddit_fetch_data: Any = None,
                     stocktwits_fetch_data: Any = None,
+                    discord_fetch_data: Any = None,
                     imported_posts: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
     posts: list[dict[str, Any]] = []
     if isinstance(x_fetch_data, dict):
@@ -76,7 +77,31 @@ def normalize_posts(x_fetch_data: Any, reddit_fetch_data: Any = None,
                 "author_id": d.get("author"),
                 "engagement": float(d.get("score") or 0) + float(d.get("num_comments") or 0),
             })
-    # operator-authorized imports (Discord/Telegram/etc.), already normalized
+    # Discord bot API: {"messages": [...]} or Firecrawl/Disboard fallback
+    if isinstance(discord_fetch_data, dict):
+        for m in (discord_fetch_data.get("messages") or []):
+            # Bot API returns message objects; each may be wrapped in a list
+            if isinstance(m, list):
+                m = m[0] if m else {}
+            if not isinstance(m, dict):
+                continue
+            # Disboard/Firecrawl markdown fallback: skip (no individual messages)
+            if not m.get("id") and not m.get("content"):
+                continue
+            reactions = sum(
+                int((r.get("count") or 0)) for r in (m.get("reactions") or [])
+                if isinstance(r, dict)
+            )
+            posts.append({
+                "platform": "discord",
+                "id": str(m.get("id") or ""),
+                "text": m.get("content") or "",
+                "created_at": m.get("timestamp"),
+                "author_id": str((m.get("author") or {}).get("id") or ""),
+                "sentiment": None,
+                "engagement": float(reactions),
+            })
+    # operator-authorized imports (Telegram/WhatsApp/etc.), already normalized
     for p in (imported_posts or []):
         if isinstance(p, dict) and p.get("text") is not None:
             p.setdefault("sentiment", None)
