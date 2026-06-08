@@ -18,6 +18,7 @@ import re
 import time
 import urllib.error
 import urllib.request
+import warnings
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -82,8 +83,8 @@ class DataConnector:
             p = self._lrd / f"{name}.json"
             p.write_bytes(raw)
             path, sha = str(p), sha256_bytes(raw)
-        except Exception:
-            pass
+        except Exception as e:
+            warnings.warn(f"live_cache write failed for {name!r}: {e}", RuntimeWarning, stacklevel=2)
         return Fetch(name=name, mode="live", status=status, data=data,
                      artifact_path=path, sha256=sha,
                      source_url_redacted=redact(url) if url else None, note=note or "live (persisted to live_cache)")
@@ -345,8 +346,8 @@ class DataConnector:
                     if r.status == 200 and data.get("success") and len(md) > 200:
                         return self._live(f"discord_{ticker}", 200, data,
                                           redact(api_url), note=f"discord ${ticker} via disboard+firecrawl")
-            except Exception:
-                pass
+            except Exception as e:
+                warnings.warn(f"discord firecrawl fetch failed for {ticker!r}: {e}", RuntimeWarning, stacklevel=2)
         return self._replay(f"discord_{ticker}", f"*/discord_*{ticker}*.json",
                             note="discord unavailable")
 
@@ -428,8 +429,8 @@ class DataConnector:
                         if r.status == 200 and data.get("success"):
                             return self._live(f"social_web_{ticker}", 200, data,
                                               redact(api_url), note=f"social web search ${ticker} via firecrawl")
-                except Exception:
-                    pass
+                except Exception as e:
+                    warnings.warn(f"social_web firecrawl fetch failed for {ticker!r}: {e}", RuntimeWarning, stacklevel=2)
         return self._replay(f"social_web_{ticker}", f"*/social_web_*{ticker}*.json",
                             note="social web search unavailable")
 
