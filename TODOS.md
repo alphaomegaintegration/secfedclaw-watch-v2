@@ -16,14 +16,6 @@ Priority scale: **P0** = blocking correctness / security · **P1** = high-value 
 
 - **Reddit OAuth credentials.** `REDDIT_CLIENT_ID` / `REDDIT_CLIENT_SECRET` still needed to make the Reddit connector live outside the operator's home network. The IP-based public path is 403-blocked on most CI/cloud hosts. (README §16 item 2)
 
-### P2 — Additional sources
-
-- **Options flow / OPRA** (Polygon entitlement): unusual options activity is a pre-pump signal and is listed in README §2 as the highest-leverage remaining addition. Needs a Polygon options snapshot connector + a new family in the scoring engine.
-
-- **Corporate-actions / split & ticker-change feed**: the largest class of remaining false anomalies. README §2 notes `needs_adjustment_review` is stubbed. Build a connector (SEC EDGAR filings or Polygon corporate actions) and use it to flag/filter tickers with recent splits or name changes before anomaly scoring.
-
-- **Promotion-source newsletters / stock-promo disclosures** via `FIRECRAWL_API_KEY`: README §16 item 3. Public SEC-required promotion disclosures (e.g. OTC Markets disclosure pages) would add a high-signal corroboration family.
-
 ### P3 — Hardening
 
 ---
@@ -32,11 +24,7 @@ Priority scale: **P0** = blocking correctness / security · **P1** = high-value 
 
 ### P2
 
-- **`dashboard_v2.py` has no `--help` text for its arguments** beyond the default argparse description. The `--out` flag exists but is not documented in README §7. Low friction to add.
-
-- **"How it works" tab (tab 11)** was added in the most recent commit but may not yet be linked from the README §7 tab list, which still says "Nine tabs". Update the README tab count and description.
-
-- **Coordination network graph (tab 10)** uses index-based edge lookup that was fixed in commit 8a68c9b — add a regression test that the graph renders edges correctly for known fixture data so this doesn't re-regress.
+- **Dashboard display for new signals**: `needs_adjustment_review`, `options_flow_detail`, and `promo_disclosure_detail` are in the package JSON but not yet surfaced in the evidence package cards in `dashboard_v2.py`. Add visual indicators (badges/flags) in the package card template.
 
 ---
 
@@ -44,9 +32,7 @@ Priority scale: **P0** = blocking correctness / security · **P1** = high-value 
 
 ### P1
 
-- **`test_daily.py::test_daily_run_replay_writes_summary` runs a full 3-minute subprocess** (`timeout=180`). In CI this is the dominant time cost and can flake on slow runners. Consider a `@pytest.mark.slow` marker and split it into a fast unit path + an optional slow integration path.
-
-- **CI workflow excludes `test_golive.py` and `test_live_flow.py`** from the standard run. Mark them `@pytest.mark.live` and run them only in a separate scheduled workflow with secrets available. (See `.github/workflows/test.yml`.)
+- **Scheduled CI workflow for `@pytest.mark.live` and `@pytest.mark.slow` tests** — markers added (commits b4afce8, afd2c59), but no separate scheduled GitHub Actions workflow yet. Create `.github/workflows/test-live.yml` that runs weekly with secrets, includes `test_golive.py`, `test_live_flow.py`, and the slow test.
 
 ### P2
 
@@ -64,7 +50,7 @@ Priority scale: **P0** = blocking correctness / security · **P1** = high-value 
 
 ### P2
 
-- **`.env` not in `.gitignore`** (or at least not verified). Double-check `.gitignore` excludes `.env`, `live_cache/`, `flatfiles/day_aggs/`, and `state/` to prevent accidental credential and large-file commits.
+- **`.env` not in `.gitignore`** — verified covered: `.env`, `.env.*`, `state/`, `flatfiles/`, `live_cache/` all present. No action needed.
 
 ### P3
 
@@ -86,6 +72,12 @@ Recent work that is done and shipped:
 - **Discord connector with Disboard+Firecrawl fallback**: all 7 planned social sources now have live connector implementations. (commit 4a8de35)
 - **Discord messages wired into scoring pipeline**: `normalize_posts()` now accepts `discord_fetch_data`; bot-API messages feed social scores, coordination graph, and family-diversity gate. (commit 776ea1d)
 - **Sidebar collapsed-state icons**: each tab shows a letter label (Q/P/N/?/A/L/S/$/M/⚖/B) in the 48px collapsed strip. (commit 13fc2d5)
+- **serve.py token auth**: `--token` flag + auto-generated token when binding beyond localhost. (commit 0ed0669)
+- **pytest markers**: `slow` + `live` registered in pytest.ini; test_daily subprocess skipped in standard CI. (commits b4afce8, afd2c59)
+- **Flatfiles SigV4 deterministic test** + **backtest unit test** + **network graph regression tests** (13 cases). (commits 925fec5, 6eaef7b, 93daf80)
+- **Corporate-actions / splits**: `polygon_splits()` connector + `needs_adjustment_review` cap in scoring. (commit 35f91fa)
+- **Options flow**: `polygon_options_snapshot()` + `_options_flow_score()` at 8% weight in anomaly evidence. (commit 35f91fa)
+- **OTC promo disclosures**: `otc_promotion_disclosure()` + +20 on issuer_event_score when disclosure found. (commit 35f91fa)
 - **Instagram and Facebook wired into scoring pipeline**: parsing blocks added; skip gracefully since both return Firecrawl markdown today. (commit a64eb4f)
 - **Discord normalize_posts unit tests**: bot-API format and Firecrawl blob both covered. (commit 68e2666)
 - **Infrastructure fixes**: `out/` and `state/` mkdir guards in `daily.py` and `edgar_pipeline.py`. (commits a145229, d10a491)
