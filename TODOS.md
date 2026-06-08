@@ -24,7 +24,7 @@ Priority scale: **P0** = blocking correctness / security · **P1** = high-value 
 
 ### P2
 
-- **Dashboard display for new signals**: `needs_adjustment_review`, `options_flow_detail`, and `promo_disclosure_detail` are in the package JSON but not yet surfaced in the evidence package cards in `dashboard_v2.py`. Add visual indicators (badges/flags) in the package card template.
+- **options_flow bar color**: options_flow_score currently reuses the green `.bar-fill` gradient in the component score table. A distinct amber/blue gradient would better convey "this is an options signal, not a direct threat indicator".
 
 ---
 
