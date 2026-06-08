@@ -95,6 +95,8 @@ def _ticker_cik_map(conn: DataConnector, tickers: list[str]) -> dict[str, str]:
 
 
 def run(tickers: list[str], max_days: int = 5, prefer_live: bool = True) -> dict[str, Any]:
+    # Ensure state/ directory exists before any read or write attempt.
+    STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
     conn = DataConnector(prefer_live=prefer_live)
     state = _load_state()
     seen = set(state.get("seen_accessions", []))
