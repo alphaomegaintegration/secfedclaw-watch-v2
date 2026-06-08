@@ -831,7 +831,18 @@ a:focus-visible{outline:3px solid var(--brand);outline-offset:2px;border-radius:
 .tab:hover{color:#fff;background:rgba(255,255,255,.1)}
 .tab.active{background:rgba(255,255,255,.18);color:#fff;border-color:rgba(255,255,255,.25)}
 .sidebar.collapsed .tab{padding:9px;text-align:center;font-size:0;overflow:visible}
-.sidebar.collapsed .tab::before{font-size:16px;display:block}
+.sidebar.collapsed .tab::before{font-size:13px;display:block;font-weight:700;color:rgba(255,255,255,.8);line-height:1.6}
+.tab[data-id="overview"]::before{content:"Q"}
+.tab[data-id="packages"]::before{content:"P"}
+.tab[data-id="network"]::before{content:"N"}
+.tab[data-id="howitworks"]::before{content:"?"}
+.tab[data-id="agents"]::before{content:"A"}
+.tab[data-id="learning"]::before{content:"L"}
+.tab[data-id="status"]::before{content:"S"}
+.tab[data-id="llm"]::before{content:"$"}
+.tab[data-id="methodology"]::before{content:"M"}
+.tab[data-id="cases"]::before{content:"\2696"}
+.tab[data-id="backtest"]::before{content:"B"}
 .panel{display:none;animation:f .15s ease} .panel.active{display:block} @keyframes f{from{opacity:.5}to{opacity:1}}
 
 /* === LAYOUT (content shifts right for sidebar) === */
