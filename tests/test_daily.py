@@ -7,10 +7,13 @@ import sys
 import unittest
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[1]
 
 
 class TestDaily(unittest.TestCase):
+    @pytest.mark.slow
     def test_daily_run_replay_writes_summary(self):
         env = dict(os.environ)
         env["SECFEDCLAW_DAILY_NOLOCK"] = "1"
