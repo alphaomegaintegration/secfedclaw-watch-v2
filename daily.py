@@ -150,6 +150,10 @@ def run(no_live: bool, tickers: list[str], discover: int) -> dict:
 
 
 def main() -> int:
+    # Ensure runtime directories exist so a fresh clone never crashes on first run.
+    Path("out").mkdir(parents=True, exist_ok=True)
+    Path("state").mkdir(parents=True, exist_ok=True)
+
     ap = argparse.ArgumentParser(description="SECFEDCLAW v0.2 scheduled daily run")
     ap.add_argument("--tickers", nargs="*", default=["AAPL", "TSLA", "AMC", "GME", "AMD", "ALB"])
     ap.add_argument("--discover", type=int, default=15)
