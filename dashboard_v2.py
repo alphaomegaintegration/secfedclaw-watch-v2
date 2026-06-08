@@ -48,6 +48,9 @@ DEFS = {
     "security_class": "Liquidity class (thin/microcap → small → mid → large) that calibrates thresholds: microcaps are more sensitive, large caps need stronger confirmation.",
     "model_advisory": "Optional calibrated review-priority probability from the gradient-boosted model. Advisory only — it never changes the rules-based priority and is never a guilt label.",
     "enforcement_history_score": "Whether the ticker/issuer appears in recent SEC litigation releases. BACKWARD-LOOKING context that raises review attention — never proof of current misconduct.",
+    "options_flow_score": "Unusual options activity: call/put open-interest skew (≥3:1 is a pump tell), near-term expiry clustering (>60% contracts ≤30 days), and implied volatility >150%. Requires Polygon options entitlement; 0 when unavailable.",
+    "needs_adjustment_review": "Recent stock split detected within 60 days. Price/volume baseline comparisons may be unreliable; watch_score capped at MEDIUM when market_anomaly_score is primary driver.",
+    "promo_disclosure": "SEC-required paid-promotion filing found on OTC Markets. Paid promoters are a hallmark of pump-and-dump schemes; +20 added to issuer_event_score.",
 }
 
 
@@ -173,7 +176,8 @@ def package_cards(packages: list[dict[str, Any]]) -> str:
         comp = p.get("component_scores", {})
         order = ["market_anomaly_score", "coordination_score", "issuer_event_score",
                  "enforcement_history_score", "market_structure_score", "halt_regulatory_score",
-                 "issuer_context_score", "social_issuer_specific_burst", "social_promotional_noise"]
+                 "options_flow_score", "issuer_context_score",
+                 "social_issuer_specific_burst", "social_promotional_noise"]
         comp_rows = "".join(
             f'<tr><td>{esc(k.replace("_"," "))} {info(k)}</td><td>{bar(comp.get(k,0))}</td></tr>'
             for k in order if k in comp)
@@ -207,6 +211,17 @@ def package_cards(packages: list[dict[str, Any]]) -> str:
             + (f'<p class="small enf"><b>Enforcement history (backward-looking):</b> '
                f'{len((p.get("enforcement_history") or {}).get("matched_releases", []))} prior release(s) referenced</p>'
                if (p.get("enforcement_history") or {}).get("matched_releases") else "")
+            + (f'<p class="small warn"><b>&#9888; Needs adjustment review {info("needs_adjustment_review")}:</b> '
+               f'Recent split — {esc("; ".join((p.get("corporate_action_detail") or {}).get("recent_splits", ["details unavailable"])))}. '
+               f'Market anomaly baseline may be unreliable.</p>'
+               if p.get("needs_adjustment_review") else "")
+            + (f'<p class="small adv"><b>Options flow {info("options_flow_score")}:</b> '
+               f'{esc("; ".join((p.get("options_flow_detail") or {}).get("basis", ["no unusual activity detected"])))}</p>'
+               if (p.get("options_flow_detail") or {}).get("basis") else "")
+            + (f'<p class="small promo"><b>&#9873; OTC promotion disclosure {info("promo_disclosure")}:</b> '
+               f'{(p.get("promo_disclosure_detail") or {}).get("record_count", 0)} paid-promoter filing(s) on OTC Markets. '
+               f'+20 added to issuer event score.</p>'
+               if (p.get("promo_disclosure_detail") or {}).get("has_disclosure") else "")
             + ma_html
             + f'<p class="small adv"><b>Adversary:</b> {esc("; ".join(adv[:2]))}</p>'
             f'<p class="small rationale">{esc(p.get("non_accusatory_rationale",""))}</p></div>')
@@ -672,6 +687,7 @@ def how_it_works_panel() -> str:
          '<tr><td><b>issuer_event</b></td><td>0–100</td><td>EDGAR insider/dilution/delisting into promoted demand</td><td>Insider selling + dilution = classic pump tell</td></tr>'
          '<tr><td><b>enforcement_history</b></td><td>0–100</td><td>Prior SEC actions on this issuer</td><td>Backward-looking context, not proof</td></tr>'
          '<tr><td><b>social_burst</b></td><td>0–100</td><td>Issuer-specific social activity (promo deflated)</td><td>Promo noise DEFLATES, not inflates</td></tr>'
+         '<tr><td><b>options_flow</b></td><td>0–100</td><td>Call/put OI skew, near-term expiry clustering, IV &gt;150%</td><td>Requires Polygon options entitlement; 0 when unavailable</td></tr>'
          '<tr><td><b>anomaly_evidence</b></td><td>0–100</td><td>Concern-bearing signal (separated from reviewability)</td><td>Must clear class-specific floor to escape LOW</td></tr>'
          '</tbody></table>'
          '<p class="small muted"><b>Corroboration gate:</b> HIGH/CRITICAL requires ≥2 independent families (market, coordination, '
@@ -910,7 +926,7 @@ tbody tr:hover{background:#f5f7fb}
 
 /* === PACKAGE CARDS === */
 .pkg-head{display:flex;align-items:center;gap:var(--s3);flex-wrap:wrap;margin-bottom:var(--s2)}
-.warn{color:var(--high);font-weight:600}.adv{color:var(--brand)}.model{color:#6b48a8}.enf{color:#8b2d5e}
+.warn{color:var(--high);font-weight:600}.adv{color:var(--brand)}.model{color:#6b48a8}.enf{color:#8b2d5e}.promo{color:var(--crit);font-weight:600}
 .expl{background:var(--brand-light);border-left:3px solid var(--brand);border-radius:var(--radius);padding:8px 10px;color:var(--ink)}
 .rationale{color:var(--muted);border-top:1px dashed var(--line);padding-top:var(--s2);margin-top:var(--s2)}
 
