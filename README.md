@@ -179,9 +179,9 @@ should — which lifted precision from 0.65 to 0.71 with no recall loss.
 
 Self-contained offline HTML (inline CSS/JS, **no auto-loaded external resources
 or callbacks**) → `out/dashboard_v2.html`, built on a small consistent design
-system (color/space/type tokens, accessible contrast). Nine tabs (Overview,
-Packages, Agents, **Learning**, **Status**, **LLM cost**, Methodology, SEC case
-studies, Backtest):
+system (color/space/type tokens, accessible contrast). Eleven tabs (Overview,
+Packages, Network, How it works, Agents, Learning, Status, LLM cost,
+Methodology, SEC case studies, Backtest):
 
 - **Overview** — operator KPI cards (universe, **score-ready %**, flagged
   ≥MEDIUM, CRITICAL/HIGH, mean anomaly-evidence, mode) + the ranked, filterable
@@ -190,9 +190,16 @@ studies, Backtest):
   externally on click.
 - **Packages** — evidence cards with component bars, families, caps,
   coordination clusters, the model advisory, and a non-accusatory rationale.
+- **Network** — interactive coordination network graph: nodes are tickers, edges
+  are weighted by coordination score; colored by priority band, draggable layout.
+- **How it works** — interactive workflow diagram of the full pipeline
+  (Scout→Analyst→Adversary→Explainer→Packager), clickable to expand each stage.
 - **Agents** — the five-agent **orchestration** (Scout→Analyst→Adversary→
   Explainer→Packager): the data feeds each pulls, the data-engineering +
   algorithms it applies, and its output, plus the live/replay data-feed table.
+- **Learning** — the autonomous feedback cycle (Scan→Review→Learn→Advise),
+  model KPIs (labels, AUC, training data), feature-importance bars, operator
+  label breakdown, and design constraints (abstention, anti-leakage, rules-primary).
 - **Status** — operational view *from an agent perspective*: each agent's live
   state, the integrations it depends on, and per-connection live/replay/ok
   health, plus system KPIs (preflight verdict, model, LLM spend, last run).
@@ -203,9 +210,6 @@ studies, Backtest):
 - **SEC case studies** — public SEC matters mapped to *which thresholds fire and
   why* (for reviewers and for building labeled training windows), plus a worked
   threshold-hit example.
-- **Learning** — the autonomous feedback cycle (Scan→Review→Learn→Advise),
-  model KPIs (labels, AUC, training data), feature-importance bars, operator
-  label breakdown, and design constraints (abstention, anti-leakage, rules-primary).
 - **Backtest** — precision/recall, confusion matrix, calibration ledger.
 
 Run `python3 pipeline.py` (or `dashboard_v2.py`) to refresh.
