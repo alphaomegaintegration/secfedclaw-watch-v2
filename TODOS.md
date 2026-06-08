@@ -32,7 +32,7 @@ Priority scale: **P0** = blocking correctness / security · **P1** = high-value 
 
 ### P1
 
-- **Scheduled CI workflow for `@pytest.mark.live` and `@pytest.mark.slow` tests** — markers added (commits b4afce8, afd2c59), but no separate scheduled GitHub Actions workflow yet. Create `.github/workflows/test-live.yml` that runs weekly with secrets, includes `test_golive.py`, `test_live_flow.py`, and the slow test.
+- **Configure secrets in GitHub Actions** — `.github/workflows/test-live.yml` is live (commit 46a6f1d, runs Sundays 06:00 UTC). Add secrets in repo Settings → Secrets → Actions: `POLYGON_API_KEY`, `X_BEARER_TOKEN`, `SEC_USER_AGENT`, `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET`, `FMP_API_KEY`, `FIRECRAWL_API_KEY`. Without them tests still pass via replay/NO_GO paths, but live GO verdict won't be tested.
 
 ### P2
 
