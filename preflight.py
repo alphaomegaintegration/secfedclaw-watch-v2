@@ -89,8 +89,14 @@ def default_prober(env: dict[str, str]) -> dict[str, Callable[[], tuple]]:
     def finra():
         return _get("https://api.finra.org/metadata/group/otcMarket/name/weeklySummary")
 
+    def fmp():
+        fmp_key = env.get("FMP_API_KEY", "")
+        if not fmp_key:
+            return None, {"error": "FMP_API_KEY not set (optional — Financial Modeling Prep)"}
+        return _get(f"https://financialmodelingprep.com/api/v3/quote/AAPL?apikey={fmp_key}")
+
     return {"polygon": polygon, "flatfiles": flatfiles, "sec_edgar": sec, "x": x,
-            "stocktwits": stocktwits, "reddit": reddit, "finra": finra}
+            "stocktwits": stocktwits, "reddit": reddit, "finra": finra, "fmp": fmp}
 
 
 # sources whose live availability defines "GO" for the core market engine

@@ -409,7 +409,10 @@ otherwise. To switch on live:
 
 Credentials used live: `POLYGON_API_KEY`, `X_BEARER_TOKEN`/`TWITTER_BEARER_TOKEN`,
 `SEC_USER_AGENT`, `MASSIVE_FLATFILES_*`, and (optional) `REDDIT_CLIENT_ID`/
-`REDDIT_CLIENT_SECRET`. StockTwits/FINRA/Nasdaq need none.
+`REDDIT_CLIENT_SECRET`, `FMP_API_KEY` (Financial Modeling Prep — quotes, profiles,
+historical prices; free tier at https://financialmodelingprep.com/developer/docs),
+and `FIRECRAWL_API_KEY` (social web search + Instagram/Facebook/Discord fallback).
+StockTwits/FINRA/Nasdaq need none.
 
 ### Schedule a daily live run (`daily.py`, `deploy/`)
 
