@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tests for multi-platform social signals (X + Reddit + StockTwits)."""
+"""Tests for multi-platform social signals (X + Reddit + StockTwits + Discord)."""
 import sys
 import unittest
 from pathlib import Path
@@ -82,6 +82,26 @@ class TestScoringIntegration(unittest.TestCase):
         self.assertEqual(pkg["social_metrics"]["n_platforms"], 3)
         self.assertGreater(pkg["component_scores"]["coordination_score"], 0)
         self.assertTrue(any("sentiment" in b for b in pkg["coordination_detail"]["basis"]))
+
+
+DISCORD_BOT_API = {"messages": [
+    {"id": "1", "content": "$AAPL pump", "timestamp": "2026-06-08T12:00:00Z",
+     "author": {"id": "u1"}, "reactions": [{"count": 3}]},
+]}
+DISCORD_FIRECRAWL = {"data": {"markdown": "some text"}, "success": True}
+
+
+class TestDiscordNormalize(unittest.TestCase):
+    def test_bot_api_message_parsed(self):
+        posts = soc.normalize_posts(None, discord_fetch_data=DISCORD_BOT_API)
+        self.assertEqual(len(posts), 1)
+        self.assertEqual(posts[0]["platform"], "discord")
+        self.assertEqual(posts[0]["text"], "$AAPL pump")
+        self.assertEqual(posts[0]["engagement"], 3.0)
+
+    def test_firecrawl_blob_produces_no_posts(self):
+        posts = soc.normalize_posts(None, discord_fetch_data=DISCORD_FIRECRAWL)
+        self.assertEqual(len(posts), 0)
 
 
 if __name__ == "__main__":
