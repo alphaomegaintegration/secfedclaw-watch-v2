@@ -1045,8 +1045,16 @@ def build_html(queue: dict, packages: list, bt: dict) -> str:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="Render SECFEDCLAW v0.2 dashboard")
-    ap.add_argument("--out", default=str(OUT / "dashboard_v2.html"))
+    ap = argparse.ArgumentParser(
+        description=(
+            "Render the SECFEDCLAW v0.2 operator dashboard as a self-contained HTML file. "
+            "Reads review_queue.json, *_watch_v2.json packages, and backtest_results.json "
+            "from the out/ directory (or --out parent). Produces a single offline HTML file "
+            "with inline CSS/JS — no external resources or callbacks."
+        )
+    )
+    ap.add_argument("--out", default=str(OUT / "dashboard_v2.html"),
+                    help="Output path for the rendered HTML file (default: out/dashboard_v2.html)")
     args = ap.parse_args()
     queue = load(OUT / "review_queue.json", {})
     bt = load(OUT / "backtest_results.json", {})
