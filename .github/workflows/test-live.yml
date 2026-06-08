@@ -1,0 +1,63 @@
+name: Tests (live + slow)
+# Full test suite including slow subprocess tests and live-pipeline tests.
+# Runs weekly on Sundays and on manual dispatch.
+#
+# Secrets (configure in repo Settings → Secrets → Actions):
+#   POLYGON_API_KEY       — Polygon.io market data (enables live GO verdict in test_golive)
+#   X_BEARER_TOKEN        — X/Twitter bearer (enables live social feed in test_golive)
+#   SEC_USER_AGENT        — "Name email" for SEC EDGAR (default used if absent)
+#   REDDIT_CLIENT_ID      — Reddit app OAuth (optional; IP-based path used if absent)
+#   REDDIT_CLIENT_SECRET  — Reddit app secret (paired with REDDIT_CLIENT_ID)
+#   FMP_API_KEY           — Financial Modeling Prep (optional)
+#   FIRECRAWL_API_KEY     — Firecrawl (optional; social web + Discord fallback)
+#
+# Without secrets: tests exercise replay / NO_GO paths and still pass.
+# With secrets:    test_golive.py additionally validates the live GO verdict.
+
+on:
+  schedule:
+    - cron: '0 6 * * 0'   # Sundays 06:00 UTC (after US weekend close)
+  workflow_dispatch:        # manual trigger from Actions tab
+
+jobs:
+  test-live:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15     # test_daily subprocess takes up to 3 min; full suite ~8 min
+
+    env:
+      POLYGON_API_KEY:       ${{ secrets.POLYGON_API_KEY }}
+      X_BEARER_TOKEN:        ${{ secrets.X_BEARER_TOKEN }}
+      TWITTER_BEARER_TOKEN:  ${{ secrets.X_BEARER_TOKEN }}
+      SEC_USER_AGENT:        ${{ secrets.SEC_USER_AGENT || 'secfedclaw-ci research ci@example.com' }}
+      REDDIT_CLIENT_ID:      ${{ secrets.REDDIT_CLIENT_ID }}
+      REDDIT_CLIENT_SECRET:  ${{ secrets.REDDIT_CLIENT_SECRET }}
+      FMP_API_KEY:           ${{ secrets.FMP_API_KEY }}
+      FIRECRAWL_API_KEY:     ${{ secrets.FIRECRAWL_API_KEY }}
+      SECFEDCLAW_DAILY_NOLOCK: "1"   # prevent lockfile conflicts in test_daily
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install pytest
+        run: pip install pytest
+
+      - name: Show configured secrets (masked)
+        run: |
+          echo "POLYGON_API_KEY set: ${{ secrets.POLYGON_API_KEY != '' }}"
+          echo "X_BEARER_TOKEN set:  ${{ secrets.X_BEARER_TOKEN != '' }}"
+          echo "REDDIT creds set:    ${{ secrets.REDDIT_CLIENT_ID != '' }}"
+          echo "FMP_API_KEY set:     ${{ secrets.FMP_API_KEY != '' }}"
+
+      - name: Smoke-test dashboard generator
+        run: python3 dashboard_v2.py --help || true
+
+      - name: Run full test suite (slow + live + standard)
+        # Runs everything: slow subprocess (test_daily), live-pipeline (test_live_flow),
+        # preflight go/no-go (test_golive), plus all standard tests.
+        # Missing secrets → replay/NO_GO paths exercised; suite still passes.
+        run: python3 -m pytest tests/ -v --tb=short
