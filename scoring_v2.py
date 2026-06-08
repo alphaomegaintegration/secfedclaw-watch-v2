@@ -72,6 +72,54 @@ def evidence_quality(bundle: dict[str, Any]) -> tuple[float, list[str]]:
     return rs.squash(max(score, 0), scale=70, cap=100) if score > 100 else max(0.0, min(score, 100.0)), gaps
 
 
+def _options_flow_score(results: list) -> tuple[float, list[str]]:
+    """Score unusual options activity from Polygon snapshot results.
+    Signals: clustered near-term expiries, skewed call/put OI ratio, high IV.
+    Returns (score 0-100, basis list). Low score when data unavailable."""
+    if not results:
+        return 0.0, []
+    basis: list[str] = []
+    total_call_oi = total_put_oi = 0
+    near_term_contracts = 0
+    high_iv_count = 0
+    for r in results[:50]:
+        details = r.get("details") or {}
+        greeks = r.get("greeks") or {}
+        day = r.get("day") or {}
+        contract_type = details.get("contract_type", "")
+        oi = r.get("open_interest") or 0
+        iv = greeks.get("implied_volatility") or r.get("implied_volatility") or 0
+        days_to_exp = details.get("days_to_expiration") or 365
+        if contract_type == "call":
+            total_call_oi += oi
+        elif contract_type == "put":
+            total_put_oi += oi
+        if 0 < days_to_exp <= 30:
+            near_term_contracts += 1
+        if iv > 1.5:  # 150% IV is anomalous
+            high_iv_count += 1
+    score = 0.0
+    # Call/put skew: >= 3:1 calls vs puts is a pump tell
+    if total_put_oi > 0:
+        cp_ratio = total_call_oi / total_put_oi
+        if cp_ratio >= 5:
+            score += 50; basis.append(f"extreme call/put OI skew {cp_ratio:.1f}:1")
+        elif cp_ratio >= 3:
+            score += 30; basis.append(f"elevated call/put OI skew {cp_ratio:.1f}:1")
+    elif total_call_oi > 0:
+        score += 20; basis.append("calls with no offsetting put OI")
+    # Near-term clustering
+    pct_near = near_term_contracts / len(results) if results else 0
+    if pct_near > 0.6:
+        score += 30; basis.append(f"{int(pct_near*100)}% of contracts expiring within 30 days")
+    elif pct_near > 0.3:
+        score += 15; basis.append(f"{int(pct_near*100)}% near-term expiry concentration")
+    # High IV
+    if high_iv_count >= 5:
+        score += 20; basis.append(f"{high_iv_count} contracts with IV>150%")
+    return round(min(score, 100.0), 2), basis
+
+
 def build_package(ticker: str, fetches: dict[str, Any]) -> dict[str, Any]:
     ticker = ticker.upper().lstrip("$")
 
@@ -138,6 +186,30 @@ def build_package(ticker: str, fetches: dict[str, Any]) -> dict[str, Any]:
     edgar_features = edgar_payload.get("features") if isinstance(edgar_payload, dict) else None
     issuer_event_val, issuer_event_basis = edgar_feat.issuer_event_score(edgar_features or {})
 
+    # ---- corporate actions — recent splits (false-positive filter) ----
+    splits_data = (fetches["splits"].data if fetches.get("splits") and
+                   hasattr(fetches["splits"], "data") else None)
+    recent_splits = (splits_data.get("results") or []) if isinstance(splits_data, dict) else []
+    needs_adjustment_review = len(recent_splits) > 0
+    split_basis = [f"split {s.get('split_from')}:{s.get('split_to')} on {s.get('execution_date')}"
+                   for s in recent_splits[:3]] if recent_splits else []
+
+    # ---- options flow (unusual activity, optional Polygon entitlement) ----
+    options_data = (fetches["options"].data if fetches.get("options") and
+                    hasattr(fetches["options"], "data") else None)
+    options_results = (options_data.get("results") or []) if isinstance(options_data, dict) else []
+    options_flow_score, options_basis = _options_flow_score(options_results)
+
+    # ---- OTC promotion disclosures ----
+    otc_data = (fetches["otc_promo"].data if fetches.get("otc_promo") and
+                hasattr(fetches["otc_promo"], "data") else None)
+    otc_promotions = (otc_data.get("promotions") or otc_data.get("records") or []
+                      ) if isinstance(otc_data, dict) else []
+    has_promo_disclosure = len(otc_promotions) > 0
+    if has_promo_disclosure:
+        issuer_event_val = min(issuer_event_val + 20, 100)
+        issuer_event_basis = issuer_event_basis + [f"OTC Markets promotion disclosure ({len(otc_promotions)} record(s))"]
+
     component_scores = {
         "social_issuer_specific_burst": round(min(
             social_scores["social_issuer_specific_burst"] * sec_cls["social_weight"], 100), 2),
@@ -149,19 +221,20 @@ def build_package(ticker: str, fetches: dict[str, Any]) -> dict[str, Any]:
         "coordination_score": round(coordination_score, 2),
         "issuer_event_score": round(issuer_event_val, 2),
         "enforcement_history_score": round(enforcement_score_val, 2),
+        "options_flow_score": round(options_flow_score, 2),
     }
 
     # ---- concern-bearing anomaly evidence (separate from reviewability) ----
-    # This is the scored ANCHOR: a weighted blend of only the concern-bearing
-    # families (weights sum to 1.0 so a single maxed family can still register
-    # meaningful concern instead of being averaged toward zero).
+    # Options flow added at 0.08 weight; other weights scaled down proportionally
+    # so the sum stays at ~1.0. Options replaces some of social weight.
     anomaly_evidence = round(min(
-        0.34 * component_scores["market_anomaly_score"] +
+        0.32 * component_scores["market_anomaly_score"] +
         0.20 * component_scores["coordination_score"] +
         0.14 * component_scores["market_structure_score"] +
         0.14 * component_scores["issuer_event_score"] +
         0.10 * component_scores["halt_regulatory_score"] +
-        0.08 * component_scores["social_issuer_specific_burst"], 100), 2)
+        0.06 * component_scores["social_issuer_specific_burst"] +
+        0.08 * component_scores["options_flow_score"], 100), 2)
 
     # ---- corroboration ----
     corr = temporal.corroboration(component_scores, social_feat)
@@ -211,6 +284,11 @@ def build_package(ticker: str, fetches: dict[str, Any]) -> dict[str, Any]:
     if anomaly_evidence < sec_cls["floor"] and component_scores["market_structure_score"] == 0 and component_scores["halt_regulatory_score"] == 0:
         score = min(score, 24)
         caps.append(f"routine-context floor cap (LOW): anomaly_evidence<{sec_cls['floor']} for {sec_cls['class']} class")
+    # Corporate-action cap: recent split means price/volume baseline is unreliable.
+    # Scores driven primarily by market anomaly should be down-banded one level.
+    if needs_adjustment_review and component_scores["market_anomaly_score"] > 30:
+        score = min(score, 49)
+        caps.append(f"needs_adjustment_review cap (<=MEDIUM): recent split ({'; '.join(split_basis)})")
 
     priority = score_to_priority(score)
 
@@ -252,11 +330,18 @@ def build_package(ticker: str, fetches: dict[str, Any]) -> dict[str, Any]:
         },
         "corroboration": corr,
         "model_advisory": model_advisory,
+        "needs_adjustment_review": needs_adjustment_review,
+        "corporate_action_detail": {"recent_splits": split_basis} if split_basis else {},
+        "options_flow_detail": {"score": round(options_flow_score, 2), "basis": options_basis},
+        "promo_disclosure_detail": {
+            "has_disclosure": has_promo_disclosure,
+            "record_count": len(otc_promotions),
+        },
         "component_scores": {k: component_scores[k] for k in (
             "social_issuer_specific_burst", "social_promotional_noise",
             "market_anomaly_score", "market_structure_score",
             "issuer_context_score", "halt_regulatory_score", "coordination_score",
-            "issuer_event_score", "enforcement_history_score")},
+            "issuer_event_score", "enforcement_history_score", "options_flow_score")},
         "enforcement_history": {
             "score": round(enforcement_score_val, 2), "basis": enforcement_basis,
             "matched_releases": [{"title": m.get("title"), "link": m.get("link"),

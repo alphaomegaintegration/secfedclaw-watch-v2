@@ -479,6 +479,62 @@ class DataConnector:
         return self._replay(f"fmp_historical_{ticker}", f"*/fmp_historical_{ticker}*.json",
                             note="FMP historical unavailable")
 
+    # ---- corporate actions (splits / name changes) -----------------------
+    def polygon_splits(self, ticker: str, lookback_days: int = 60) -> Fetch:
+        """Recent stock splits for a ticker via Polygon reference API.
+        Used to flag needs_adjustment_review: a recent split can make
+        volume/price anomaly scores artificially high (pre-split data
+        vs post-split levels). No Polygon entitlement required — free tier."""
+        ticker = ticker.upper()
+        pk = self.env.get("POLYGON_API_KEY")
+        if pk and self.prefer_live:
+            import time as _t
+            since = _t.strftime("%Y-%m-%d", _t.gmtime(_t.time() - lookback_days * 86400))
+            url = (f"https://api.polygon.io/v3/reference/splits"
+                   f"?ticker={ticker}&execution_date.gte={since}&limit=10&apiKey={pk}")
+            status, data = self._http_json(url)
+            if status == 200 and data:
+                return self._live(f"splits_{ticker}", status, data, redact(url),
+                                  note=f"Polygon splits {ticker} since {since}")
+        return self._replay(f"splits_{ticker}", f"*/splits_{ticker}*.json",
+                            note="splits unavailable")
+
+    # ---- options flow (unusual activity) ----------------------------------
+    def polygon_options_snapshot(self, ticker: str) -> Fetch:
+        """Unusual options activity snapshot from Polygon (requires options entitlement).
+        Captures call/put open interest, implied volatility skew, and expiry
+        clustering — pre-pump coordinated call buying is a recognized signal."""
+        ticker = ticker.upper()
+        pk = self.env.get("POLYGON_API_KEY")
+        if pk and self.prefer_live:
+            url = (f"https://api.polygon.io/v3/snapshot/options/{ticker}"
+                   f"?limit=50&sort=open_interest&order=desc&apiKey={pk}")
+            status, data = self._http_json(url)
+            if status == 200 and data:
+                return self._live(f"options_{ticker}", status, data, redact(url),
+                                  note=f"Polygon options snapshot {ticker}")
+            if status == 403:
+                return self._replay(f"options_{ticker}", f"*/options_{ticker}*.json",
+                                    note="options data requires Polygon options entitlement (403)")
+        return self._replay(f"options_{ticker}", f"*/options_{ticker}*.json",
+                            note="options unavailable")
+
+    # ---- promotion disclosures (OTC Markets) ------------------------------
+    def otc_promotion_disclosure(self, ticker: str) -> Fetch:
+        """Stock promotion disclosures from OTC Markets public API.
+        SEC-required paid-promotion filings for OTC/Pink Sheet issuers.
+        High-signal: paid promoters are a hallmark of pump-and-dump schemes."""
+        ticker = ticker.upper()
+        if self.prefer_live:
+            url = f"https://www.otcmarkets.com/research/stock-promoters/api/search?symbol={ticker}"
+            ua = self.env.get("SEC_USER_AGENT", "secfedclaw research")
+            status, data = self._http_json(url, {"User-Agent": ua, "Accept": "application/json"})
+            if status == 200 and data:
+                return self._live(f"otc_promo_{ticker}", status, data, url,
+                                  note=f"OTC Markets promotion disclosures {ticker}")
+        return self._replay(f"otc_promo_{ticker}", f"*/otc_promo_{ticker}*.json",
+                            note="OTC promotion disclosures unavailable")
+
     # ---- official/regulatory sources ------------------------------------
     def sec_submissions(self, cik10: str) -> Fetch:
         ua = self.env.get("SEC_USER_AGENT", "secfedclaw research robert.david.brown@gmail.com")

@@ -90,6 +90,9 @@ class ScoutAgent:
             "fmp_quote": c.fmp_quote(ticker),
             "fmp_profile": c.fmp_profile(ticker),
             "fmp_historical": c.fmp_historical(ticker),
+            "splits": c.polygon_splits(ticker),
+            "options": c.polygon_options_snapshot(ticker),
+            "otc_promo": c.otc_promotion_disclosure(ticker),
         }
         # Reddit availability depends on OAuth creds + reachability; reflect it.
         fetches["reddit_unavailable"] = not fetches["reddit"].ok()
