@@ -31,6 +31,8 @@ _CASHTAG_RE = re.compile(r"\$[A-Za-z]{1,6}\b")
 def normalize_posts(x_fetch_data: Any, reddit_fetch_data: Any = None,
                     stocktwits_fetch_data: Any = None,
                     discord_fetch_data: Any = None,
+                    instagram_fetch_data: Any = None,
+                    facebook_fetch_data: Any = None,
                     imported_posts: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
     posts: list[dict[str, Any]] = []
     if isinstance(x_fetch_data, dict):
@@ -100,6 +102,40 @@ def normalize_posts(x_fetch_data: Any, reddit_fetch_data: Any = None,
                 "author_id": str((m.get("author") or {}).get("id") or ""),
                 "sentiment": None,
                 "engagement": float(reactions),
+            })
+    # Instagram: Firecrawl/Picuki markdown fallback — no individual post objects.
+    # Only parse if structured post objects with id or text are present.
+    if isinstance(instagram_fetch_data, dict):
+        for m in (instagram_fetch_data.get("posts") or []):
+            if not isinstance(m, dict):
+                continue
+            if not m.get("id") and not m.get("text"):
+                continue
+            posts.append({
+                "platform": "instagram",
+                "id": str(m.get("id") or ""),
+                "text": m.get("text") or m.get("caption") or "",
+                "created_at": m.get("timestamp") or m.get("created_at"),
+                "author_id": str(m.get("author_id") or m.get("username") or ""),
+                "sentiment": None,
+                "engagement": float(m.get("likes") or m.get("engagement") or 0),
+            })
+    # Facebook (stock forums via Firecrawl): same Firecrawl markdown format — no structured posts.
+    # Only parse if structured post objects with id or text are present.
+    if isinstance(facebook_fetch_data, dict):
+        for m in (facebook_fetch_data.get("posts") or []):
+            if not isinstance(m, dict):
+                continue
+            if not m.get("id") and not m.get("text"):
+                continue
+            posts.append({
+                "platform": "facebook",
+                "id": str(m.get("id") or ""),
+                "text": m.get("text") or m.get("message") or "",
+                "created_at": m.get("timestamp") or m.get("created_at"),
+                "author_id": str(m.get("author_id") or m.get("from_id") or ""),
+                "sentiment": None,
+                "engagement": float(m.get("likes") or m.get("engagement") or 0),
             })
     # operator-authorized imports (Telegram/WhatsApp/etc.), already normalized
     for p in (imported_posts or []):
