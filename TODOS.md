@@ -10,9 +10,9 @@ Priority scale: **P0** = blocking correctness / security · **P1** = high-value 
 
 - **Rotate compromised API keys.** `hermes/.hermes_history` contains plaintext credentials (an Anthropic key + one other) that were pasted into the shell. Rotate both immediately and scrub the file. (README §1, flagged red)
 
-### P1 — High-value wiring gap
+### P1
 
-- **Instagram / Facebook fetch data not passed to `normalize_posts`.** Same gap as Discord (now fixed) — `instagram_hashtag` and `facebook_search` fetches land in `fetches` but are never normalized into posts for scoring. These platforms are lower-priority than Discord (need login sessions) but the wiring gap should be closed once the social-import path for them is validated.
+- **Instagram / Facebook produce only Firecrawl markdown** — the parsing blocks are wired (commit a64eb4f) and skip gracefully since neither connector returns structured post objects today. When a structured API path is added, the `"posts"` key pattern will activate automatically. No further action until then.
 
 - **Reddit OAuth credentials.** `REDDIT_CLIENT_ID` / `REDDIT_CLIENT_SECRET` still needed to make the Reddit connector live outside the operator's home network. The IP-based public path is 403-blocked on most CI/cloud hosts. (README §16 item 2)
 
@@ -24,11 +24,7 @@ Priority scale: **P0** = blocking correctness / security · **P1** = high-value 
 
 - **Promotion-source newsletters / stock-promo disclosures** via `FIRECRAWL_API_KEY`: README §16 item 3. Public SEC-required promotion disclosures (e.g. OTC Markets disclosure pages) would add a high-signal corroboration family.
 
-- **FMP (`FMP_API_KEY`) is optional but undocumented in setup.** The three FMP connectors (`fmp_quote`, `fmp_profile`, `fmp_historical`) are live and used by ScoutAgent but `FMP_API_KEY` is not mentioned in the README's credential setup section. Add it there and to `preflight.py`.
-
 ### P3 — Hardening
-
-- **`except Exception: pass` exception-swallowing** in `connectors.py` lines 86, 349, 432 hides persistence errors and Firecrawl failures silently. At minimum log a warning so operators see degraded live-cache writes.
 
 ---
 
@@ -50,9 +46,7 @@ Priority scale: **P0** = blocking correctness / security · **P1** = high-value 
 
 - **`test_daily.py::test_daily_run_replay_writes_summary` runs a full 3-minute subprocess** (`timeout=180`). In CI this is the dominant time cost and can flake on slow runners. Consider a `@pytest.mark.slow` marker and split it into a fast unit path + an optional slow integration path.
 
-- **Add test for Discord→`normalize_posts` wiring.** The gap is now fixed (commit 776ea1d) but has no dedicated test. Add a unit test to `test_social.py` that passes a Discord bot-API `messages`-format payload through `normalize_posts` and asserts platform, text, and engagement fields are populated correctly.
-
-- **CI workflow excludes `test_golive.py` and `test_live_flow.py`** from the standard run because they make real or mock-live network calls that require network access or credentials. They pass locally but are not safe as blocking CI gates. Mark them `@pytest.mark.live` and run them only in a separate scheduled workflow with secrets available. (See `.github/workflows/test.yml`.)
+- **CI workflow excludes `test_golive.py` and `test_live_flow.py`** from the standard run. Mark them `@pytest.mark.live` and run them only in a separate scheduled workflow with secrets available. (See `.github/workflows/test.yml`.)
 
 ### P2
 
@@ -66,15 +60,9 @@ Priority scale: **P0** = blocking correctness / security · **P1** = high-value 
 
 ### P1
 
-- **`daily.py` lockfile is in `out/`**, which is a generated-artifact directory not in git. On a fresh CI/cloud clone the `out/` dir may not exist before `daily.py` runs, causing lockfile creation to fail before the NOLOCK env var is checked. Add a `out/` mkdir early in `daily.py` init, or move the lockfile to a dedicated `state/` directory.
-
-- **`state/edgar_state.json` watermark directory** (`state/`) is not created by any init path — if it doesn't exist the EDGAR pipeline crashes on first run. Add a `state/` mkdir guard in `edgar_pipeline.py`.
-
 - **`deploy/` launchd/cron scripts** reference hardcoded paths from the original environment. Document the one-time path substitution step more prominently, or templatize them with a `setup_deploy.sh` that substitutes `$(pwd)` at install time.
 
 ### P2
-
-- **No `requirements-dev.txt` or `pyproject.toml`** — `pytest` is described as "a dev tool even though it's not in requirements.txt." Add a minimal `requirements-dev.txt` with `pytest>=7` so CI and contributors don't need to know this by convention.
 
 - **`.env` not in `.gitignore`** (or at least not verified). Double-check `.gitignore` excludes `.env`, `live_cache/`, `flatfiles/day_aggs/`, and `state/` to prevent accidental credential and large-file commits.
 
@@ -98,6 +86,14 @@ Recent work that is done and shipped:
 - **Discord connector with Disboard+Firecrawl fallback**: all 7 planned social sources now have live connector implementations. (commit 4a8de35)
 - **Discord messages wired into scoring pipeline**: `normalize_posts()` now accepts `discord_fetch_data`; bot-API messages feed social scores, coordination graph, and family-diversity gate. (commit 776ea1d)
 - **Sidebar collapsed-state icons**: each tab shows a letter label (Q/P/N/?/A/L/S/$/M/⚖/B) in the 48px collapsed strip. (commit 13fc2d5)
+- **Instagram and Facebook wired into scoring pipeline**: parsing blocks added; skip gracefully since both return Firecrawl markdown today. (commit a64eb4f)
+- **Discord normalize_posts unit tests**: bot-API format and Firecrawl blob both covered. (commit 68e2666)
+- **Infrastructure fixes**: `out/` and `state/` mkdir guards in `daily.py` and `edgar_pipeline.py`. (commits a145229, d10a491)
+- **requirements-dev.txt** added with `pytest>=7`. (commit 506fb1a)
+- **FMP_API_KEY** documented in README and preflight.py. (commit 678eb0c)
+- **Exception logging**: silent `pass` replaced with `warnings.warn` in connectors.py. (commit 9b12610)
+- **dashboard_v2.py --help** improved with full description and flag docs. (commit e20038c)
+- **README tab count** updated to 11. (commit 6da881d)
 - **GBrain local-PGLite brain**: set up and synced for semantic code search across this repo. (CLAUDE.md)
 - **Multi-platform social (X, Reddit OAuth, StockTwits)**: all normalized into one post schema with cross-platform dedup and coordination graph.
 - **Per-security-class calibration**: `thin_microcap / small_cap / mid_cap / large_cap` thresholds — large caps no longer float at MEDIUM with no real anomaly.
