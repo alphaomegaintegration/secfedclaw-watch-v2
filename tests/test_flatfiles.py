@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Tests for Polygon/Massive Flat Files client + historical replay."""
+import datetime as dt
 import gzip
 import sys
 import tempfile
@@ -49,6 +50,39 @@ class TestSigning(unittest.TestCase):
         req = flatfiles.signed_get_request("AKIDEXAMPLE", "secret", "us_stocks_sip/x.csv.gz")
         self.assertTrue(req.headers["Authorization"].startswith("AWS4-HMAC-SHA256"))
         self.assertIn("x-amz-date", {k.lower() for k in req.headers})
+
+    def test_signed_get_deterministic_structure(self):
+        """Fixed inputs produce a deterministic, structurally valid Authorization header."""
+        access_key = "AKIAIOSFODNN7EXAMPLE"
+        secret = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+        key = "us_stocks_sip/day_aggs_v1/2021/09/2021-09-13.csv.gz"
+        # Fix the signing time so the output is 100% deterministic.
+        fixed_now = dt.datetime(2021, 9, 13, 0, 0, 0, tzinfo=dt.timezone.utc)
+        req = flatfiles.signed_get_request(access_key, secret, key, now=fixed_now)
+
+        auth = req.headers["Authorization"]
+        # 1. Algorithm prefix
+        self.assertTrue(auth.startswith("AWS4-HMAC-SHA256 "), auth[:40])
+
+        # 2. Credential scope contains the access key
+        self.assertIn(f"Credential={access_key}/", auth)
+
+        # 3. Credential scope encodes the correct date + region + service
+        #    format: <access_key>/YYYYMMDD/us-east-1/s3/aws4_request
+        self.assertIn("20210913/us-east-1/s3/aws4_request", auth)
+
+        # 4. SignedHeaders field lists exactly the expected headers
+        self.assertIn("SignedHeaders=host;x-amz-content-sha256;x-amz-date", auth)
+
+        # 5. Signature field is present and looks like a 64-char hex string
+        import re
+        m = re.search(r"Signature=([0-9a-f]+)", auth)
+        self.assertIsNotNone(m, "Signature field missing from Authorization header")
+        self.assertEqual(len(m.group(1)), 64, "SigV4 signature must be 64 hex chars (SHA-256)")
+
+        # 6. x-amz-date header matches the fixed timestamp (urllib stores as "X-amz-date")
+        amz_date = req.headers.get("X-amz-date") or req.headers.get("x-amz-date") or req.headers.get("X-Amz-Date")
+        self.assertEqual(amz_date, "20210913T000000Z")
 
 
 class TestMarketFetchesAndScore(unittest.TestCase):
