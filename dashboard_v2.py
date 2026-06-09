@@ -870,7 +870,7 @@ a:focus-visible{outline:3px solid var(--brand);outline-offset:2px;border-radius:
 
 /* === TYPOGRAPHY === */
 h2{font-size:22px;font-weight:700;margin:0 0 var(--s4);color:var(--ink)}
-h3{font-size:16px;font-weight:700;margin:0 0 var(--s3);color:var(--ink)}
+h3{font-size:17px;font-weight:700;margin:0 0 var(--s3);color:var(--ink)}
 
 /* === CARDS === */
 .card{background:var(--bg);border:1px solid var(--line);border-radius:var(--radius);padding:var(--s4);margin-bottom:var(--s4);box-shadow:var(--shadow)}
