@@ -910,6 +910,7 @@ tbody tr:hover{background:#f5f7fb}
 .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:var(--s3);margin-bottom:var(--s4)}
 .kpi{background:var(--bg);border:1px solid var(--line);border-top:3px solid var(--brand);border-radius:var(--radius);padding:var(--s3) var(--s4);box-shadow:var(--shadow)}
 .kpi-num{font-size:24px;font-weight:700;color:var(--brand)}
+.kpi-num.kpi-text{font-size:15px;font-weight:600;color:var(--muted);letter-spacing:.2px}
 .kpi-lbl{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-top:2px}
 .kpi-sub{font-size:11px;color:var(--faint);margin-top:2px}
 
@@ -972,6 +973,10 @@ function toggleNav(){
   try{localStorage.setItem('navCollapsed',c?'1':'0');}catch(e){}
 }
 window.addEventListener('DOMContentLoaded',function(){
+  // Style non-numeric KPI values (e.g. "live", "abstaining", "—") at smaller text size
+  document.querySelectorAll('.kpi-num').forEach(function(el){
+    if(!/^[\d.,+\-$%\/]+$/.test(el.textContent.trim()))el.classList.add('kpi-text');
+  });
   var h=location.hash.slice(1);
   if(h){var t=document.querySelector('.tab[data-id="'+h+'"]');if(t)t.click();}
   try{if(localStorage.getItem('navCollapsed')==='1'){
