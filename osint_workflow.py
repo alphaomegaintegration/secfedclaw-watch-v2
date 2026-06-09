@@ -205,9 +205,22 @@ def submit_to_nousangels(package: dict, open_browser: bool = True) -> dict:
     print(f"Login: {NOUSANGELS_EMAIL}")
 
     if open_browser:
-        webbrowser.open(NOUSANGELS_OSINT)
-        for s in x_searches[:2]:  # open top 2 searches
-            webbrowser.open(s["url"])
+        # Guard: webbrowser.open is a no-op in launchd/cron contexts (no display).
+        # Check for an interactive terminal before attempting to open tabs.
+        import sys as _sys
+        _can_open = _sys.stdout.isatty() or bool(
+            __import__("os").environ.get("DISPLAY") or
+            __import__("os").environ.get("TERM_PROGRAM")
+        )
+        if _can_open:
+            webbrowser.open(NOUSANGELS_OSINT)
+            for s in x_searches[:2]:  # open top 2 searches
+                webbrowser.open(s["url"])
+        else:
+            print("\n[osint_workflow] No display context detected (launchd/cron/headless).")
+            print(f"  Open manually: {NOUSANGELS_OSINT}")
+            for s in x_searches[:2]:
+                print(f"  Search: {s['url']}")
 
     return {
         "ticker": ticker,
