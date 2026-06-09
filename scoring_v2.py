@@ -88,18 +88,34 @@ def _parse_openinsider(markdown: str, ticker: str) -> tuple[int, int]:
     ticker_up = ticker.upper()
     sale_codes = {"S", "S+", "S-", "S-A", "S+OE"}
     buy_codes = {"P", "P+"}
+    # Minimum size to count as a meaningful sale/purchase.
+    # Filters out routine 10b5-1 plan sales, small option exercises, and
+    # compensatory grants. Only large concentrated transactions are pump tells.
+    MIN_SHARES = 10_000
+    MIN_VALUE = 50_000  # USD
     for line in markdown.splitlines():
         if "|" not in line:
             continue
-        # Strip leading/trailing pipes and split on ' | '
         parts = [p.strip() for p in line.strip().strip("|").split("|")]
-        if len(parts) < 6:
+        if len(parts) < 11:
             continue
-        # col[2] = Ticker, col[5] = Trade Type
+        # OpenInsider columns: 0=Filing Date  1=Trade Date  2=Ticker
+        #   3=Insider Name  4=Title  5=Trade Type  6=Price  7=Qty
+        #   8=Owned  9=ΔOwn%  10=Value
         row_ticker = parts[2].upper().strip()
         trade_type = parts[5].strip().upper()
         if row_ticker != ticker_up:
             continue
+        # Parse qty and value; skip small transactions
+        def _parse_num(s: str) -> float:
+            try:
+                return float(s.replace(",", "").replace("$", "").replace("%", "").strip() or "0")
+            except ValueError:
+                return 0.0
+        qty = _parse_num(parts[7]) if len(parts) > 7 else 0.0
+        val = _parse_num(parts[10]) if len(parts) > 10 else 0.0
+        if qty < MIN_SHARES and val < MIN_VALUE:
+            continue  # too small — likely routine/compensatory
         if trade_type in sale_codes:
             sells += 1
         elif trade_type in buy_codes:
@@ -107,12 +123,20 @@ def _parse_openinsider(markdown: str, ticker: str) -> tuple[int, int]:
     return sells, buys
 
 
-def _options_flow_score(results: list) -> tuple[float, list[str]]:
+def _options_flow_score(results: list, sec_class: str = "unknown") -> tuple[float, list[str]]:
     """Score unusual options activity from Polygon snapshot results.
     Signals: clustered near-term expiries, skewed call/put OI ratio, high IV.
+
+    Security-class calibration (thin/microcap markets inflate ratios naturally):
+      thin_microcap: require 5:1+ OI skew (3:1 is routine in thin markets)
+      small_cap:     require 4:1+
+      mid/large_cap: require 3:1+ (standard threshold)
+
     Returns (score 0-100, basis list). Low score when data unavailable."""
     if not results:
         return 0.0, []
+    # Class-aware minimum ratio for the call/put skew signal
+    _skew_thresh = {"thin_microcap": 5.0, "small_cap": 4.0}.get(sec_class, 3.0)
     basis: list[str] = []
     total_call_oi = total_put_oi = 0
     near_term_contracts = 0
@@ -120,7 +144,6 @@ def _options_flow_score(results: list) -> tuple[float, list[str]]:
     for r in results[:50]:
         details = r.get("details") or {}
         greeks = r.get("greeks") or {}
-        day = r.get("day") or {}
         contract_type = details.get("contract_type", "")
         oi = r.get("open_interest") or 0
         iv = greeks.get("implied_volatility") or r.get("implied_volatility") or 0
@@ -134,13 +157,13 @@ def _options_flow_score(results: list) -> tuple[float, list[str]]:
         if iv > 1.5:  # 150% IV is anomalous
             high_iv_count += 1
     score = 0.0
-    # Call/put skew: >= 3:1 calls vs puts is a pump tell
+    # Call/put OI skew — threshold varies by security class
     if total_put_oi > 0:
         cp_ratio = total_call_oi / total_put_oi
-        if cp_ratio >= 5:
-            score += 50; basis.append(f"extreme call/put OI skew {cp_ratio:.1f}:1")
-        elif cp_ratio >= 3:
-            score += 30; basis.append(f"elevated call/put OI skew {cp_ratio:.1f}:1")
+        if cp_ratio >= _skew_thresh * 5 / 3:  # extreme = 1.67× the class threshold
+            score += 50; basis.append(f"extreme call/put OI skew {cp_ratio:.1f}:1 (class: {sec_class})")
+        elif cp_ratio >= _skew_thresh:
+            score += 30; basis.append(f"elevated call/put OI skew {cp_ratio:.1f}:1 (class: {sec_class})")
     elif total_call_oi > 0:
         score += 20; basis.append("calls with no offsetting put OI")
     # Near-term clustering
@@ -233,7 +256,7 @@ def build_package(ticker: str, fetches: dict[str, Any]) -> dict[str, Any]:
     options_data = (fetches["options"].data if fetches.get("options") and
                     hasattr(fetches["options"], "data") else None)
     options_results = (options_data.get("results") or []) if isinstance(options_data, dict) else []
-    options_flow_score, options_basis = _options_flow_score(options_results)
+    options_flow_score, options_basis = _options_flow_score(options_results, sec_class=cls)
 
     # ---- OpenInsider (Form 4 insider trading) ----
     openinsider_data = (fetches["openinsider"].data if fetches.get("openinsider") and

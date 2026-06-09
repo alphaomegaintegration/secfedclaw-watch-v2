@@ -96,9 +96,9 @@ class ScoutAgent:
             "otc_promo": c.otc_promotion_disclosure(ticker),
             # OpenInsider: fast (2s waitFor), run for all tickers
             "openinsider": c.openinsider_trades(ticker),
-            # Glint + MyFXBook: slow (4s+3s waitFor); deferred to enrich() for MEDIUM+ only
+            # Glint: slow (4s waitFor); deferred to enrich() for MEDIUM+ only
+            # MyFXBook removed — forex-only platform, no signal value for equity surveillance
             "glint": type("F", (), {"data": None, "mode": "deferred", "ok": lambda self: False})(),
-            "myfxbook": type("F", (), {"data": None, "mode": "deferred", "ok": lambda self: False})(),
         }
         # Reddit availability depends on OAuth creds + reachability; reflect it.
         fetches["reddit_unavailable"] = not fetches["reddit"].ok()
@@ -121,11 +121,8 @@ class ScoutAgent:
         def _glint():
             return ("glint", c.glint_trade_signals(ticker))
 
-        def _myfxbook():
-            return ("myfxbook", c.myfxbook_community(ticker))
-
-        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
-            futures = [pool.submit(_glint), pool.submit(_myfxbook)]
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+            futures = [pool.submit(_glint)]
             for fut in concurrent.futures.as_completed(futures):
                 try:
                     key, result = fut.result()
@@ -151,10 +148,23 @@ class AdversaryAgent:
         order = ["LOW", "MEDIUM", "HIGH", "CRITICAL_REVIEW"]
         priority = package["review_priority"]
 
-        # 1. Corroboration enforcement: HIGH+ needs >=2 families.
-        if package["corroboration"]["n_families_active"] < 2 and order.index(priority) >= 2:
+        # 1. Corroboration enforcement: HIGH+ needs >=2 concern-bearing families.
+        # Only count families that carry anomaly evidence: market, coordination,
+        # social, issuer_event, halt. Exclude enforcement_history (backward-looking
+        # context, not anomaly) and issuer_context (OTC listing alone is not concern).
+        # This closes a loophole where a stale enforcement history match or OTC listing
+        # pushed n_families_active to 2 and bypassed the downgrade.
+        CONCERN_FAMILIES = {"market", "coordination", "social", "issuer_event", "halt"}
+        active_families = set(package["corroboration"].get("families_active", []))
+        n_concern = len(active_families & CONCERN_FAMILIES)
+        if n_concern < 2 and order.index(priority) >= 2:
             priority = "MEDIUM"
-            caveats.append("adversary: downgraded to MEDIUM — fewer than 2 independent families.")
+            caveats.append(
+                f"adversary: downgraded to MEDIUM — only {n_concern} concern-bearing "
+                f"family(ies) active (requires ≥2 of: market, coordination, social, "
+                f"issuer_event, halt). Backward-looking context (enforcement_history, "
+                f"issuer_context) does not satisfy the corroboration gate."
+            )
 
         # 2. Coordination authenticity: a coordination score with no clusters is suspect.
         cd = package.get("coordination_detail", {})
@@ -242,11 +252,16 @@ class Orchestrator:
         gathered = self.scout.gather(ticker)
         # Pass 1: score without Glint/MyFXBook (they're deferred stubs)
         package = self.analyst.score(ticker, gathered["fetches"])
-        # Pass 2: if MEDIUM+, fetch Glint+MyFXBook concurrently and re-score
+        # Pass 2: if MEDIUM+, fetch Glint concurrently and re-score.
+        # Save pass-1 score for observability — operator can see if enrichment moved the needle.
         _MEDIUM_PLUS = {"MEDIUM", "HIGH", "CRITICAL_REVIEW"}
+        pre_enrichment_score = package.get("watch_score")
         if package.get("review_priority") in _MEDIUM_PLUS:
             self.scout.enrich(ticker, gathered["fetches"])
             package = self.analyst.score(ticker, gathered["fetches"])
+            package["pre_enrichment_watch_score"] = pre_enrichment_score
+            package["enrichment_delta"] = round(
+                (package.get("watch_score", 0) - (pre_enrichment_score or 0)), 2)
         package["source_health"] = gathered["source_health"]
         package = self.adversary.review(package)
         package = self.explainer.explain(package)

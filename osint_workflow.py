@@ -4,8 +4,8 @@
 When a scan produces packages at HIGH (≥50) or CRITICAL_REVIEW (≥75) priority,
 this module:
   1. Builds targeted X/Twitter search URLs for the ticker + time window.
-  2. Submits case information to nousangels.dev/osint via headless browser
-     (Playwright/Firecrawl). Login: robert.david.brown@gmail.com.
+  2. Submits case information to nousangels.dev/osint via headless browser.
+     Login email read from SECFEDCLAW_OPERATOR_EMAIL env var (see .env).
   3. Logs the investigation URL and search links to the package output.
 
 This is WATCH-level enrichment only — never automated action, contact, or escalation.
@@ -28,7 +28,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from config import load_env, fed_claw_root  # noqa: E402
 
 NOUSANGELS_OSINT = "https://nousangels.dev/osint"
-NOUSANGELS_EMAIL = "robert.david.brown@gmail.com"
+# Operator email loaded from env — never hardcoded in source.
+# Set SECFEDCLAW_OPERATOR_EMAIL in .env or shell environment.
+def _operator_email() -> str:
+    import os
+    return os.environ.get("SECFEDCLAW_OPERATOR_EMAIL", "operator@localhost")
 
 PRIORITY_ORDER = ["LOW", "MEDIUM", "HIGH", "CRITICAL_REVIEW"]
 
@@ -202,7 +206,7 @@ def submit_to_nousangels(package: dict, open_browser: bool = True) -> dict:
     for s in x_searches:
         print(f"  {s['label']}: {s['url']}")
     print(f"\nNousAngels OSINT: {NOUSANGELS_OSINT}")
-    print(f"Login: {NOUSANGELS_EMAIL}")
+    print(f"Login: {_operator_email()}")
 
     if open_browser:
         # Guard: webbrowser.open is a no-op in launchd/cron contexts (no display).
@@ -295,7 +299,7 @@ def main() -> int:
     print(f"\n{'='*60}")
     print(f"Processed {len(results)} package(s).")
     print("Next steps:")
-    print(f"  1. Log in to {NOUSANGELS_OSINT} with {NOUSANGELS_EMAIL}")
+    print(f"  1. Log in to {NOUSANGELS_OSINT} with {_operator_email()}")
     print("  2. Create a new case and paste the brief from the .txt file above")
     print("  3. Use the X search links to gather additional evidence")
     print("  4. Run the nousangels entity mapper and timeline builder")
