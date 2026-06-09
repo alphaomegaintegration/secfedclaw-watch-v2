@@ -840,8 +840,9 @@ a:focus-visible{outline:3px solid var(--brand);outline-offset:2px;border-radius:
 .sidebar{position:fixed;left:0;top:0;bottom:0;width:var(--sidebar-w);background:var(--header-bg);border-right:3px solid var(--accent);z-index:20;display:flex;flex-direction:column;transition:width .2s ease;overflow:hidden}
 .sidebar.collapsed{width:var(--sidebar-collapsed)}
 .sidebar-header{display:flex;align-items:center;justify-content:flex-end;padding:var(--s3) var(--s2);border-bottom:1px solid rgba(255,255,255,.15);min-height:52px;flex-shrink:0}
-.sidebar-toggle{background:none;border:none;cursor:pointer;color:rgba(255,255,255,.8);padding:6px;border-radius:var(--radius);line-height:1;font-size:18px;width:36px;text-align:center;transition:background .1s}
+.sidebar-toggle{background:none;border:none;cursor:pointer;color:rgba(255,255,255,.8);padding:7px;border-radius:var(--radius);line-height:1;font-size:18px;min-width:44px;min-height:44px;text-align:center;transition:background .1s;display:flex;align-items:center;justify-content:center}
 .sidebar-toggle:hover{background:rgba(255,255,255,.12);color:#fff}
+.sidebar-toggle:focus-visible{outline:3px solid rgba(255,255,255,.6);outline-offset:2px}
 .tabs{display:flex;flex-direction:column;gap:2px;padding:var(--s2);overflow-y:auto;flex:1}
 .tab{padding:9px var(--s3);background:transparent;border:1px solid transparent;border-radius:var(--radius);cursor:pointer;font-weight:600;font-size:13.5px;color:rgba(255,255,255,.7);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;transition:background .1s,color .1s;text-align:left;width:100%}
 .tab:hover{color:#fff;background:rgba(255,255,255,.1)}
