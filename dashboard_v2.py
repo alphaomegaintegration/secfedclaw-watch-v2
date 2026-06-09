@@ -866,7 +866,7 @@ a:focus-visible{outline:3px solid var(--brand);outline-offset:2px;border-radius:
 .page-shell.nav-collapsed{margin-left:var(--sidebar-collapsed)}
 .wrap{max-width:1180px;margin:0 auto;padding:var(--s5)}
 @media(max-width:760px){.sidebar{width:var(--sidebar-collapsed)}.page-shell{margin-left:var(--sidebar-collapsed)}}
-.intro{color:var(--muted);max-width:80ch;margin:0 0 var(--s4);font-size:14.5px;line-height:1.65}
+.intro{color:var(--muted);max-width:80ch;margin:0 0 var(--s4);font-size:16px;line-height:1.65}
 
 /* === TYPOGRAPHY === */
 h2{font-size:22px;font-weight:700;margin:0 0 var(--s4);color:var(--ink)}
