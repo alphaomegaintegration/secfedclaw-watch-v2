@@ -15,6 +15,7 @@ external parties, or emit conclusions above WATCH.
 """
 from __future__ import annotations
 
+import concurrent.futures
 import hashlib
 import json
 import sys
@@ -93,9 +94,11 @@ class ScoutAgent:
             "splits": c.polygon_splits(ticker),
             "options": c.polygon_options_snapshot(ticker),
             "otc_promo": c.otc_promotion_disclosure(ticker),
+            # OpenInsider: fast (2s waitFor), run for all tickers
             "openinsider": c.openinsider_trades(ticker),
-            "glint": c.glint_trade_signals(ticker),
-            "myfxbook": c.myfxbook_community(ticker),
+            # Glint + MyFXBook: slow (4s+3s waitFor); deferred to enrich() for MEDIUM+ only
+            "glint": type("F", (), {"data": None, "mode": "deferred", "ok": lambda self: False})(),
+            "myfxbook": type("F", (), {"data": None, "mode": "deferred", "ok": lambda self: False})(),
         }
         # Reddit availability depends on OAuth creds + reachability; reflect it.
         fetches["reddit_unavailable"] = not fetches["reddit"].ok()
@@ -103,6 +106,33 @@ class ScoutAgent:
                       "ok": v.ok() if hasattr(v, "ok") else False}
                   for k, v in fetches.items() if hasattr(v, "mode")}
         return {"fetches": fetches, "source_health": health}
+
+    def enrich(self, ticker: str, fetches: dict[str, Any]) -> dict[str, Any]:
+        """Fetch Glint.trade + MyFXBook concurrently (ThreadPoolExecutor).
+        Called only for MEDIUM+ tickers after initial scoring — avoids burning
+        Firecrawl credits and 7s waitFor time on LOW tickers.
+        Updates fetches dict in-place and returns it."""
+        c = self.c
+        # ── data flow ─────────────────────────────────────────────────────
+        #  gather() [fast: no Glint/MyFXBook]
+        #     └─► score() → if MEDIUM+: enrich() [concurrent Glint+MyFXBook]
+        #             └─► re-score() with enriched fetches
+        # ──────────────────────────────────────────────────────────────────
+        def _glint():
+            return ("glint", c.glint_trade_signals(ticker))
+
+        def _myfxbook():
+            return ("myfxbook", c.myfxbook_community(ticker))
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+            futures = [pool.submit(_glint), pool.submit(_myfxbook)]
+            for fut in concurrent.futures.as_completed(futures):
+                try:
+                    key, result = fut.result()
+                    fetches[key] = result
+                except Exception:
+                    pass  # individual enrichment failure is non-fatal; deferred stub remains
+        return fetches
 
 
 class AnalystAgent:
@@ -210,7 +240,13 @@ class Orchestrator:
 
     def run(self, ticker: str) -> dict[str, Any]:
         gathered = self.scout.gather(ticker)
+        # Pass 1: score without Glint/MyFXBook (they're deferred stubs)
         package = self.analyst.score(ticker, gathered["fetches"])
+        # Pass 2: if MEDIUM+, fetch Glint+MyFXBook concurrently and re-score
+        _MEDIUM_PLUS = {"MEDIUM", "HIGH", "CRITICAL_REVIEW"}
+        if package.get("review_priority") in _MEDIUM_PLUS:
+            self.scout.enrich(ticker, gathered["fetches"])
+            package = self.analyst.score(ticker, gathered["fetches"])
         package["source_health"] = gathered["source_health"]
         package = self.adversary.review(package)
         package = self.explainer.explain(package)
