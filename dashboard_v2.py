@@ -914,7 +914,7 @@ tbody tr:hover{background:#f5f7fb}
 
 /* === FILTER BUTTONS === */
 .filters{margin:0 0 var(--s3);display:flex;gap:6px;flex-wrap:wrap;align-items:center}
-.filters button{background:var(--bg);border:1px solid var(--line-2);color:var(--muted);border-radius:3px;padding:5px 12px;cursor:pointer;font-weight:600;font-size:13px;transition:all .1s}
+.filters button{background:var(--bg);border:1px solid var(--line-2);color:var(--muted);border-radius:3px;padding:7px 14px;cursor:pointer;font-weight:600;font-size:13px;transition:all .1s;min-height:32px}
 .filters button:hover{border-color:var(--brand);color:var(--brand);background:var(--brand-light)}
 .mini td,.mini th{padding:5px 8px;font-size:12.5px}
 
