@@ -929,7 +929,7 @@ tbody tr:hover{background:#f5f7fb}
 /* === PACKAGE CARDS === */
 .pkg-head{display:flex;align-items:center;gap:var(--s3);flex-wrap:wrap;margin-bottom:var(--s2)}
 .warn{color:var(--high);font-weight:600}.adv{color:var(--brand)}.model{color:#6b48a8}.enf{color:#8b2d5e}.promo{color:var(--crit);font-weight:600}
-.expl{background:var(--brand-light);border-left:3px solid var(--brand);border-radius:var(--radius);padding:8px 10px;color:var(--ink)}
+.expl{background:var(--brand-light);border-radius:var(--radius);padding:8px 10px;color:var(--ink);border:1px solid rgba(0,94,162,.15)}
 .rationale{color:var(--muted);border-top:1px dashed var(--line);padding-top:var(--s2);margin-top:var(--s2)}
 
 /* === STATUS DOTS === */
