@@ -74,20 +74,35 @@ def evidence_quality(bundle: dict[str, Any]) -> tuple[float, list[str]]:
 
 def _parse_openinsider(markdown: str, ticker: str) -> tuple[int, int]:
     """Parse OpenInsider Firecrawl markdown for sale/purchase counts.
-    Returns (n_sells, n_buys). Conservative: only counts rows that clearly
-    mention the ticker and a trade type (S=sale, P=purchase)."""
+    Returns (n_sells, n_buys).
+
+    OpenInsider search results table column order (0-indexed after split on ' | '):
+      0: Filing Date  1: Trade Date  2: Ticker  3: Insider Name  4: Title
+      5: Trade Type   6: Price  7: Qty  8: Owned  9: ΔOwn%  10: Value
+    We check col[5] (trade type) only on data rows that contain the ticker in
+    col[2] — this eliminates header rows ('Trade Type'), footer rows, and
+    company-name false matches."""
     if not markdown or len(markdown) < 50:
         return 0, 0
     sells = buys = 0
     ticker_up = ticker.upper()
+    sale_codes = {"S", "S+", "S-", "S-A", "S+OE"}
+    buy_codes = {"P", "P+"}
     for line in markdown.splitlines():
-        if ticker_up not in line.upper():
+        if "|" not in line:
             continue
-        # OpenInsider markdown tables use S/P/A/D/F/M/X/G/C/W trade type codes
-        # "S" = Sale, "P" = Purchase, "S+" = Sale+OE, "S-" = Sale-OE
-        if "| S " in line or "| S+" in line or "| S-" in line:
+        # Strip leading/trailing pipes and split on ' | '
+        parts = [p.strip() for p in line.strip().strip("|").split("|")]
+        if len(parts) < 6:
+            continue
+        # col[2] = Ticker, col[5] = Trade Type
+        row_ticker = parts[2].upper().strip()
+        trade_type = parts[5].strip().upper()
+        if row_ticker != ticker_up:
+            continue
+        if trade_type in sale_codes:
             sells += 1
-        elif "| P " in line or "| P+" in line:
+        elif trade_type in buy_codes:
             buys += 1
     return sells, buys
 
