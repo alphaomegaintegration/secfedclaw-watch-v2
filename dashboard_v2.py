@@ -898,7 +898,7 @@ tbody tr:hover{background:#f5f7fb}
 .info{display:inline-block;width:17px;height:17px;line-height:17px;text-align:center;border-radius:50%;background:var(--brand);color:#fff;font-size:10px;font-weight:700;cursor:help;margin-left:4px;position:relative;vertical-align:middle}
 .info .tooltip{display:none;position:absolute;bottom:calc(100% + 8px);left:50%;transform:translateX(-50%);background:#fff;color:var(--ink);border:1px solid var(--line-2);box-shadow:0 4px 12px rgba(0,0,0,.15);border-radius:var(--radius);padding:10px 14px;font-size:13px;font-weight:400;line-height:1.5;width:320px;max-width:90vw;white-space:normal;text-align:left;z-index:100;pointer-events:none}
 .info .tooltip::after{content:'';position:absolute;top:100%;left:50%;transform:translateX(-50%);border:6px solid transparent;border-top-color:var(--line-2)}
-.info:hover .tooltip,.info:focus .tooltip{display:block}
+.info:hover .tooltip,.info:focus-visible .tooltip{display:block}
 
 /* === SCORE BARS === */
 .bar{position:relative;background:var(--panel);border:1px solid var(--line);border-radius:3px;height:18px;min-width:130px;overflow:hidden}
