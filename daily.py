@@ -145,6 +145,28 @@ def run(no_live: bool, tickers: list[str], discover: int) -> dict:
         summary["ok"] = all(rc == 0 for rc in summary["steps"].values()) and not summary["errors"]
         summary["log"] = str(log_path)
         _log(fh, f"daily run done ok={summary['ok']} flagged>=MED={summary.get('flagged_ge_medium')}")
+
+        # AUTO-OSINT: generate case briefs for HIGH/CRITICAL packages (no browser)
+        high_count = sum(v for k, v in (summary.get("priority_distribution") or {}).items()
+                         if k in ("HIGH", "CRITICAL_REVIEW"))
+        if high_count > 0:
+            try:
+                import osint_workflow as _osint
+                queue_path = OUT / "review_queue.json"
+                if queue_path.exists():
+                    q2 = json.loads(queue_path.read_text())
+                    for row in q2.get("review_queue", []):
+                        if row.get("review_priority") in ("HIGH", "CRITICAL_REVIEW"):
+                            ticker = row.get("ticker", "")
+                            pkg_files = sorted(OUT.glob(f"{ticker}_*_watch_v2.json"), reverse=True)
+                            if pkg_files:
+                                pkg = json.loads(pkg_files[0].read_text())
+                                result = _osint.submit_to_nousangels(pkg, open_browser=False)
+                                _log(fh, f"OSINT brief written: {result.get('brief_path')}")
+                                summary.setdefault("osint_briefs", []).append(result.get("brief_path"))
+            except Exception as e:
+                _log(fh, f"OSINT workflow error (non-fatal): {e}")
+
     SUMMARY.write_text(json.dumps(summary, indent=2, default=str) + "\n")
     return summary
 
