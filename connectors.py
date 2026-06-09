@@ -535,6 +535,101 @@ class DataConnector:
         return self._replay(f"otc_promo_{ticker}", f"*/otc_promo_{ticker}*.json",
                             note="OTC promotion disclosures unavailable")
 
+    # ---- OpenInsider (SEC Form 4 insider trades) -------------------------
+    def openinsider_trades(self, ticker: str, lookback_days: int = 90) -> Fetch:
+        """Insider purchase/sale activity from openinsider.com (public SEC Form 4 data).
+        High-value signal: insiders selling into promoted demand is a classic pump tell.
+        No credentials required — public site with clean HTML tables."""
+        ticker = ticker.upper()
+        fc_key = self.env.get("FIRECRAWL_API_KEY")
+        if fc_key and self.prefer_live:
+            try:
+                url = f"http://openinsider.com/search?q={ticker}"
+                api_url = "https://api.firecrawl.dev/v1/scrape"
+                body = json.dumps({
+                    "url": url,
+                    "formats": ["markdown"],
+                    "waitFor": 2000,
+                    "includeTags": ["table"],
+                }).encode()
+                req = urllib.request.Request(api_url, data=body, headers={
+                    "Authorization": f"Bearer {fc_key}",
+                    "Content-Type": "application/json"})
+                with urllib.request.urlopen(req, timeout=30) as r:
+                    data = json.loads(r.read())
+                    md = (data.get("data") or {}).get("markdown", "")
+                    if r.status == 200 and data.get("success") and len(md) > 100:
+                        return self._live(f"openinsider_{ticker}", 200, {"markdown": md, "url": url},
+                                          redact(api_url),
+                                          note=f"OpenInsider Form 4 trades for {ticker}")
+            except Exception as e:
+                warnings.warn(f"openinsider fetch failed for {ticker!r}: {e}", RuntimeWarning, stacklevel=2)
+        return self._replay(f"openinsider_{ticker}", f"*/openinsider_{ticker}*.json",
+                            note="OpenInsider unavailable — set FIRECRAWL_API_KEY")
+
+    # ---- Glint.trade (pump/dump signal tracker) -------------------------
+    def glint_trade_signals(self, ticker: str) -> Fetch:
+        """Pump-and-dump signal tracker from glint.trade.
+        Requires Firecrawl with JS rendering (React SPA with Cloudflare protection)."""
+        ticker = ticker.upper()
+        fc_key = self.env.get("FIRECRAWL_API_KEY")
+        if fc_key and self.prefer_live:
+            try:
+                url = f"https://glint.trade/ticker/{ticker}"
+                api_url = "https://api.firecrawl.dev/v1/scrape"
+                body = json.dumps({
+                    "url": url,
+                    "formats": ["markdown"],
+                    "waitFor": 4000,
+                    "mobile": False,
+                }).encode()
+                req = urllib.request.Request(api_url, data=body, headers={
+                    "Authorization": f"Bearer {fc_key}",
+                    "Content-Type": "application/json"})
+                with urllib.request.urlopen(req, timeout=45) as r:
+                    data = json.loads(r.read())
+                    md = (data.get("data") or {}).get("markdown", "")
+                    if r.status == 200 and data.get("success") and len(md) > 100:
+                        return self._live(f"glint_{ticker}", 200, {"markdown": md, "url": url},
+                                          redact(api_url),
+                                          note=f"Glint.trade signals for {ticker}")
+            except Exception as e:
+                warnings.warn(f"glint.trade fetch failed for {ticker!r}: {e}", RuntimeWarning, stacklevel=2)
+        return self._replay(f"glint_{ticker}", f"*/glint_{ticker}*.json",
+                            note="Glint.trade unavailable")
+
+    # ---- MyFXBook community sentiment ------------------------------------
+    def myfxbook_community(self, ticker: str) -> Fetch:
+        """MyFXBook trading community sentiment and watchlist signals.
+        Account: robert.david.brown@gmail.com / profile browngeek666.
+        Uses Firecrawl to access community pages; falls back to replay."""
+        ticker = ticker.upper()
+        fc_key = self.env.get("FIRECRAWL_API_KEY")
+        if fc_key and self.prefer_live:
+            try:
+                # Community outlook/sentiment page — publicly accessible
+                url = f"https://www.myfxbook.com/community/outlook/{ticker}"
+                api_url = "https://api.firecrawl.dev/v1/scrape"
+                body = json.dumps({
+                    "url": url,
+                    "formats": ["markdown"],
+                    "waitFor": 3000,
+                }).encode()
+                req = urllib.request.Request(api_url, data=body, headers={
+                    "Authorization": f"Bearer {fc_key}",
+                    "Content-Type": "application/json"})
+                with urllib.request.urlopen(req, timeout=30) as r:
+                    data = json.loads(r.read())
+                    md = (data.get("data") or {}).get("markdown", "")
+                    if r.status == 200 and data.get("success") and len(md) > 100:
+                        return self._live(f"myfxbook_{ticker}", 200, {"markdown": md, "url": url},
+                                          redact(api_url),
+                                          note=f"MyFXBook community sentiment for {ticker}")
+            except Exception as e:
+                warnings.warn(f"myfxbook fetch failed for {ticker!r}: {e}", RuntimeWarning, stacklevel=2)
+        return self._replay(f"myfxbook_{ticker}", f"*/myfxbook_{ticker}*.json",
+                            note="MyFXBook unavailable")
+
     # ---- official/regulatory sources ------------------------------------
     def sec_submissions(self, cik10: str) -> Fetch:
         ua = self.env.get("SEC_USER_AGENT", "secfedclaw research robert.david.brown@gmail.com")

@@ -93,6 +93,9 @@ class ScoutAgent:
             "splits": c.polygon_splits(ticker),
             "options": c.polygon_options_snapshot(ticker),
             "otc_promo": c.otc_promotion_disclosure(ticker),
+            "openinsider": c.openinsider_trades(ticker),
+            "glint": c.glint_trade_signals(ticker),
+            "myfxbook": c.myfxbook_community(ticker),
         }
         # Reddit availability depends on OAuth creds + reachability; reflect it.
         fetches["reddit_unavailable"] = not fetches["reddit"].ok()

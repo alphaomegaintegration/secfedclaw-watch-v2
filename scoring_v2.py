@@ -72,6 +72,26 @@ def evidence_quality(bundle: dict[str, Any]) -> tuple[float, list[str]]:
     return rs.squash(max(score, 0), scale=70, cap=100) if score > 100 else max(0.0, min(score, 100.0)), gaps
 
 
+def _parse_openinsider(markdown: str, ticker: str) -> tuple[int, int]:
+    """Parse OpenInsider Firecrawl markdown for sale/purchase counts.
+    Returns (n_sells, n_buys). Conservative: only counts rows that clearly
+    mention the ticker and a trade type (S=sale, P=purchase)."""
+    if not markdown or len(markdown) < 50:
+        return 0, 0
+    sells = buys = 0
+    ticker_up = ticker.upper()
+    for line in markdown.splitlines():
+        if ticker_up not in line.upper():
+            continue
+        # OpenInsider markdown tables use S/P/A/D/F/M/X/G/C/W trade type codes
+        # "S" = Sale, "P" = Purchase, "S+" = Sale+OE, "S-" = Sale-OE
+        if "| S " in line or "| S+" in line or "| S-" in line:
+            sells += 1
+        elif "| P " in line or "| P+" in line:
+            buys += 1
+    return sells, buys
+
+
 def _options_flow_score(results: list) -> tuple[float, list[str]]:
     """Score unusual options activity from Polygon snapshot results.
     Signals: clustered near-term expiries, skewed call/put OI ratio, high IV.
@@ -199,6 +219,21 @@ def build_package(ticker: str, fetches: dict[str, Any]) -> dict[str, Any]:
                     hasattr(fetches["options"], "data") else None)
     options_results = (options_data.get("results") or []) if isinstance(options_data, dict) else []
     options_flow_score, options_basis = _options_flow_score(options_results)
+
+    # ---- OpenInsider (Form 4 insider trading) ----
+    openinsider_data = (fetches["openinsider"].data if fetches.get("openinsider") and
+                        hasattr(fetches["openinsider"], "data") else None)
+    openinsider_md = (openinsider_data.get("markdown", "") if isinstance(openinsider_data, dict) else "")
+    insider_sells, insider_buys = _parse_openinsider(openinsider_md, ticker)
+    if insider_sells > 0:
+        # Insider selling into promoted demand is a direct issuer-event signal
+        sell_boost = min(insider_sells * 8, 30)
+        issuer_event_val = min(issuer_event_val + sell_boost, 100)
+        issuer_event_basis = issuer_event_basis + [
+            f"OpenInsider: {insider_sells} insider sale(s) in Form 4 filings (sell_boost={sell_boost})"]
+    if insider_buys > 0:
+        issuer_event_basis = issuer_event_basis + [
+            f"OpenInsider: {insider_buys} insider purchase(s) — bullish signal, reduces concern"]
 
     # ---- OTC promotion disclosures ----
     otc_data = (fetches["otc_promo"].data if fetches.get("otc_promo") and
