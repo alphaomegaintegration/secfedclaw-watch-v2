@@ -5,8 +5,8 @@
   "guardrails": "WATCH-only review priorities. Not trading signals or proof of misconduct.",
   "review_queue": [
     {
-      "anomaly_evidence_score": 0.67,
-      "data_mode": "replay",
+      "anomaly_evidence_score": 0.0,
+      "data_mode": "unavailable",
       "evidence_quality_score": 0.0,
       "explanation_source": "template",
       "n_families_active": 0,
@@ -24,9 +24,9 @@
           "status": null
         },
         "edgar": {
-          "mode": "replay",
-          "ok": true,
-          "status": 200
+          "mode": "unavailable",
+          "ok": false,
+          "status": null
         },
         "facebook": {
           "mode": "unavailable",
@@ -149,8 +149,8 @@
           "status": null
         }
       },
-      "ticker": "TSLA",
-      "watch_score": 0.27
+      "ticker": "AAPL",
+      "watch_score": 0.0
     },
     {
       "anomaly_evidence_score": 0.0,
@@ -297,7 +297,7 @@
           "status": null
         }
       },
-      "ticker": "AAPL",
+      "ticker": "TSLA",
       "watch_score": 0.0
     },
     {

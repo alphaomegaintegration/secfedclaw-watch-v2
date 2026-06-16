@@ -29,6 +29,45 @@ def _normalize(queue: dict) -> dict:
     return queue
 
 
+class _FakeFetch:
+    """A minimal Fetch-like stub: every source is 'unavailable'."""
+
+    def __init__(self, name: str):
+        self.name = name
+        self.mode = "unavailable"
+        self.status = None
+        self.data = None
+
+    def ok(self) -> bool:
+        return False
+
+
+class _FakeConnector:
+    """Deterministic, machine-independent connector for the parity test.
+
+    The real DataConnector reads gitignored, __file__-relative artifacts (e.g.
+    out/edgar/issuer_features_<T>.json) that exist on a dev box but never on CI,
+    which made an end-to-end golden non-portable. This stub returns the same
+    'unavailable' fetch for every source on every machine, so the parity test
+    isolates exactly what Phase 0 changed — the concurrent fan-out in
+    ScoutAgent.gather() — without depending on local data.
+    """
+
+    def __init__(self):
+        self.env = {}
+
+    def live_available(self) -> bool:
+        return False
+
+    def sec_company_tickers(self) -> _FakeFetch:
+        return _FakeFetch("sec_company_tickers")  # ok()==False → no CIK map mutation
+
+    def __getattr__(self, name):
+        # Any source method (polygon_*, x_recent, edgar_issuer_features, ...) →
+        # a thunk returning a deterministic unavailable fetch.
+        return lambda *a, **k: _FakeFetch(name)
+
+
 class TestConcurrencyUtils(unittest.TestCase):
     def test_run_concurrent_preserves_spec_order(self):
         import concurrency
@@ -207,7 +246,10 @@ class TestScanParity(unittest.TestCase):
         golden = json.loads(FIXTURE.read_text())
         with tempfile.TemporaryDirectory() as td:
             out = Path(td)
-            run_scan(["AAPL", "TSLA", "GME"], prefer_live=False, out_dir=out)
+            # Hermetic: fake connector → identical inputs on every machine, so the
+            # comparison isolates the concurrency refactor, not local artifacts.
+            run_scan(["AAPL", "TSLA", "GME"], prefer_live=False, out_dir=out,
+                     connector=_FakeConnector())
             produced = json.loads((out / "review_queue.json").read_text())
         # Normalize both to the same canonical form and compare.
         a = json.dumps(_normalize(golden), indent=2, sort_keys=True)
