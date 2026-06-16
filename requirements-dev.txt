@@ -1,3 +1,6 @@
-# Development dependencies — not required for production operation.
+# Development / test dependencies.
 # Install with: pip install -r requirements-dev.txt
 pytest>=7
+# numpy backs model.py (gradient boosting), usage.py and dashboard_v2.py; the
+# test suite imports these transitively, so it is required to run the tests.
+numpy>=1.24
