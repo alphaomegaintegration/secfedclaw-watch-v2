@@ -1,0 +1,453 @@
+{
+  "algorithm_version": "watch_score_v0.2.0",
+  "data_mode": "replay",
+  "finding_ceiling": "WATCH",
+  "guardrails": "WATCH-only review priorities. Not trading signals or proof of misconduct.",
+  "review_queue": [
+    {
+      "anomaly_evidence_score": 0.67,
+      "data_mode": "replay",
+      "evidence_quality_score": 0.0,
+      "explanation_source": "template",
+      "n_families_active": 0,
+      "review_priority": "LOW",
+      "security_class": "unknown",
+      "source_health": {
+        "daily_range": {
+          "mode": "unavailable",
+          "ok": false,
+          "status": null
+        },
+        "discord": {
+          "mode": "unavailable",
+          "ok": false,
+          "status": null
+        },
+        "edgar": {
+          "mode": "replay",
+          "ok": true,
+          "status": 200
+        },
+        "facebook": {
+          "mode": "unavailable",
+          "ok": false,
+          "status": null
+        },
+        "fmp_historical": {
+          "mode": "unavailable",
+          "ok": false,
+          "status": null
+        },
+        "fmp_profile": {
+          "mode": "unavailable",
+          "ok": false,
+          "status": null
+        },
+        "fmp_quote": {
+          "mode": "unavailable",
+          "ok": false,
+          "status": null
+        },
+        "glint": {
+          "mode": "deferred",
+          "ok": false,
+          "status": null
+        },
+        "grouped": {
+          "mode": "unavailable",
+          "ok": false,
+          "status": null
+        },
+        "halts": {
+          "mode": "unavailable",
+          "ok": false,
+          "status": null
+        },
+        "instagram": {
+          "mode": "unavailable",
+          "ok": false,
+          "status": null
+        },
+        "litigation": {
+          "mode": "unavailable",
+          "ok": false,
+          "status": null
+        },
+        "openinsider": {
+          "mode": "unavailable",
+          "ok": false,
+          "status": null
+        },
+        "options": {
+          "mode": "unavailable",
+          "ok": false,
+          "status": null
+        },
+        "otc_promo": {
+          "mode": "unavailable",
+          "ok": false,
+          "status": null
+        },
+        "otc_threshold": {
+          "mode": "unavailable",
+          "ok": false,
+          "status": null
+        },
+        "prev": {
+          "mode": "unavailable",
+          "ok": false,
+          "status": null
+        },
+        "quotes": {
+          "mode": "unavailable",
+          "ok": false,
+          "status": null
+        },
+        "reddit": {
+          "mode": "unavailable",
+          "ok": false,
+          "status": null
+        },
+        "reg_sho": {
+          "mode": "unavailable",
+          "ok": false,
+          "status": null
+        },
+        "snapshot": {
+          "mode": "unavailable",
+          "ok": false,
+          "status": null
+        },
+        "social_web": {
+          "mode": "unavailable",
+          "ok": false,
+          "status": null
+        },
+        "splits": {
+          "mode": "unavailable",
+          "ok": false,
+          "status": null
+        },
+        "stocktwits": {
+          "mode": "unavailable",
+          "ok": false,
+          "status": null
+        },
+        "submissions": {
+          "mode": "unavailable",
+          "ok": false,
+          "status": null
+        },
+        "trades": {
+          "mode": "unavailable",
+          "ok": false,
+          "status": null
+        },
+        "x": {
+          "mode": "unavailable",
+          "ok": false,
+          "status": null
+        }
+      },
+      "ticker": "TSLA",
+      "watch_score": 0.27
+    },
+    {
+      "anomaly_evidence_score": 0.0,
+      "data_mode": "unavailable",
+      "evidence_quality_score": 0.0,
+      "explanation_source": "template",
+      "n_families_active": 0,
+      "review_priority": "LOW",
+      "security_class": "unknown",
+      "source_health": {
+        "daily_range": {
+          "mode": "unavailable",
+          "ok": false,
+          "status": null
+        },
+        "discord": {
+          "mode": "unavailable",
+          "ok": false,
+          "status": null
+        },
+        "edgar": {
+          "mode": "unavailable",
+          "ok": false,
+          "status": null
+        },
+        "facebook": {
+          "mode": "unavailable",
+          "ok": false,
+          "status": null
+        },
+        "fmp_historical": {
+          "mode": "unavailable",
+          "ok": false,
+          "status": null
+        },
+        "fmp_profile": {
+          "mode": "unavailable",
+          "ok": false,
+          "status": null
+        },
+        "fmp_quote": {
+          "mode": "unavailable",
+          "ok": false,
+          "status": null
+        },
+        "glint": {
+          "mode": "deferred",
+          "ok": false,
+          "status": null
+        },
+        "grouped": {
+          "mode": "unavailable",
+          "ok": false,
+          "status": null
+        },
+        "halts": {
+          "mode": "unavailable",
+          "ok": false,
+          "status": null
+        },
+        "instagram": {
+          "mode": "unavailable",
+          "ok": false,
+          "status": null
+        },
+        "litigation": {
+          "mode": "unavailable",
+          "ok": false,
+          "status": null
+        },
+        "openinsider": {
+          "mode": "unavailable",
+          "ok": false,
+          "status": null
+        },
+        "options": {
+          "mode": "unavailable",
+          "ok": false,
+          "status": null
+        },
+        "otc_promo": {
+          "mode": "unavailable",
+          "ok": false,
+          "status": null
+        },
+        "otc_threshold": {
+          "mode": "unavailable",
+          "ok": false,
+          "status": null
+        },
+        "prev": {
+          "mode": "unavailable",
+          "ok": false,
+          "status": null
+        },
+        "quotes": {
+          "mode": "unavailable",
+          "ok": false,
+          "status": null
+        },
+        "reddit": {
+          "mode": "unavailable",
+          "ok": false,
+          "status": null
+        },
+        "reg_sho": {
+          "mode": "unavailable",
+          "ok": false,
+          "status": null
+        },
+        "snapshot": {
+          "mode": "unavailable",
+          "ok": false,
+          "status": null
+        },
+        "social_web": {
+          "mode": "unavailable",
+          "ok": false,
+          "status": null
+        },
+        "splits": {
+          "mode": "unavailable",
+          "ok": false,
+          "status": null
+        },
+        "stocktwits": {
+          "mode": "unavailable",
+          "ok": false,
+          "status": null
+        },
+        "submissions": {
+          "mode": "unavailable",
+          "ok": false,
+          "status": null
+        },
+        "trades": {
+          "mode": "unavailable",
+          "ok": false,
+          "status": null
+        },
+        "x": {
+          "mode": "unavailable",
+          "ok": false,
+          "status": null
+        }
+      },
+      "ticker": "AAPL",
+      "watch_score": 0.0
+    },
+    {
+      "anomaly_evidence_score": 0.0,
+      "data_mode": "unavailable",
+      "evidence_quality_score": 0.0,
+      "explanation_source": "template",
+      "n_families_active": 0,
+      "review_priority": "LOW",
+      "security_class": "unknown",
+      "source_health": {
+        "daily_range": {
+          "mode": "unavailable",
+          "ok": false,
+          "status": null
+        },
+        "discord": {
+          "mode": "unavailable",
+          "ok": false,
+          "status": null
+        },
+        "edgar": {
+          "mode": "unavailable",
+          "ok": false,
+          "status": null
+        },
+        "facebook": {
+          "mode": "unavailable",
+          "ok": false,
+          "status": null
+        },
+        "fmp_historical": {
+          "mode": "unavailable",
+          "ok": false,
+          "status": null
+        },
+        "fmp_profile": {
+          "mode": "unavailable",
+          "ok": false,
+          "status": null
+        },
+        "fmp_quote": {
+          "mode": "unavailable",
+          "ok": false,
+          "status": null
+        },
+        "glint": {
+          "mode": "deferred",
+          "ok": false,
+          "status": null
+        },
+        "grouped": {
+          "mode": "unavailable",
+          "ok": false,
+          "status": null
+        },
+        "halts": {
+          "mode": "unavailable",
+          "ok": false,
+          "status": null
+        },
+        "instagram": {
+          "mode": "unavailable",
+          "ok": false,
+          "status": null
+        },
+        "litigation": {
+          "mode": "unavailable",
+          "ok": false,
+          "status": null
+        },
+        "openinsider": {
+          "mode": "unavailable",
+          "ok": false,
+          "status": null
+        },
+        "options": {
+          "mode": "unavailable",
+          "ok": false,
+          "status": null
+        },
+        "otc_promo": {
+          "mode": "unavailable",
+          "ok": false,
+          "status": null
+        },
+        "otc_threshold": {
+          "mode": "unavailable",
+          "ok": false,
+          "status": null
+        },
+        "prev": {
+          "mode": "unavailable",
+          "ok": false,
+          "status": null
+        },
+        "quotes": {
+          "mode": "unavailable",
+          "ok": false,
+          "status": null
+        },
+        "reddit": {
+          "mode": "unavailable",
+          "ok": false,
+          "status": null
+        },
+        "reg_sho": {
+          "mode": "unavailable",
+          "ok": false,
+          "status": null
+        },
+        "snapshot": {
+          "mode": "unavailable",
+          "ok": false,
+          "status": null
+        },
+        "social_web": {
+          "mode": "unavailable",
+          "ok": false,
+          "status": null
+        },
+        "splits": {
+          "mode": "unavailable",
+          "ok": false,
+          "status": null
+        },
+        "stocktwits": {
+          "mode": "unavailable",
+          "ok": false,
+          "status": null
+        },
+        "submissions": {
+          "mode": "unavailable",
+          "ok": false,
+          "status": null
+        },
+        "trades": {
+          "mode": "unavailable",
+          "ok": false,
+          "status": null
+        },
+        "x": {
+          "mode": "unavailable",
+          "ok": false,
+          "status": null
+        }
+      },
+      "ticker": "GME",
+      "watch_score": 0.0
+    }
+  ],
+  "universe_size": 3
+}
