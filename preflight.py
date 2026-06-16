@@ -93,7 +93,7 @@ def default_prober(env: dict[str, str]) -> dict[str, Callable[[], tuple]]:
         fmp_key = env.get("FMP_API_KEY", "")
         if not fmp_key:
             return None, {"error": "FMP_API_KEY not set (optional — Financial Modeling Prep)"}
-        return _get(f"https://financialmodelingprep.com/api/v3/quote/AAPL?apikey={fmp_key}")
+        return _get(f"https://financialmodelingprep.com/stable/quote?symbol=AAPL&apikey={fmp_key}")
 
     return {"polygon": polygon, "flatfiles": flatfiles, "sec_edgar": sec, "x": x,
             "stocktwits": stocktwits, "reddit": reddit, "finra": finra, "fmp": fmp}
