@@ -77,11 +77,17 @@ class Fetch:
 class DataConnector:
     """Fetches live when possible, else replays newest matching artifact."""
 
-    def __init__(self, root: Path | None = None, prefer_live: bool = True, timeout: int = 12):
+    def __init__(self, root: Path | None = None, prefer_live: bool = True, timeout: int = 12,
+                 scrape_timeout: int = 12):
         self.root = root or fed_claw_root()
         self.env = load_env(self.root)
         self.prefer_live = prefer_live
         self.timeout = timeout
+        # Firecrawl scrapers (openinsider/glint/social_web/x/discord/instagram/facebook)
+        # are the slow per-ticker sources; cap them shorter than the old hardcoded 30s
+        # so a stalled scrape fails fast (→ unavailable, non-fatal) instead of stalling
+        # the whole ticker. Lets broad live --discover runs actually finish.
+        self.scrape_timeout = scrape_timeout
         self._live_ok: bool | None = None
         self.artifacts = self.root / "artifacts"
         self.collections = self.root / "collections"
@@ -262,7 +268,7 @@ class DataConnector:
                         "Authorization": f"Bearer {fc_key}",
                         "Content-Type": "application/json",
                         "User-Agent": "secfedclaw-watch/2.0"})
-                    with urllib.request.urlopen(req, timeout=30) as r:
+                    with urllib.request.urlopen(req, timeout=self.scrape_timeout) as r:
                         fc_data = json.loads(r.read())
                         if r.status == 200 and fc_data.get("success"):
                             md = (fc_data.get("data") or {}).get("markdown", "")
@@ -377,7 +383,7 @@ class DataConnector:
                 body = json.dumps({"url": url, "formats": ["markdown"], "waitFor": 3000}).encode()
                 req = urllib.request.Request(api_url, data=body, headers={
                     "Authorization": f"Bearer {fc_key}", "Content-Type": "application/json"})
-                with urllib.request.urlopen(req, timeout=30) as r:
+                with urllib.request.urlopen(req, timeout=self.scrape_timeout) as r:
                     data = json.loads(r.read())
                     md = (data.get("data") or {}).get("markdown", "")
                     if r.status == 200 and data.get("success") and len(md) > 200:
@@ -404,7 +410,7 @@ class DataConnector:
                         "Authorization": f"Bearer {fc_key}",
                         "Content-Type": "application/json",
                         "User-Agent": "secfedclaw-watch/2.0"})
-                    with urllib.request.urlopen(req, timeout=30) as r:
+                    with urllib.request.urlopen(req, timeout=self.scrape_timeout) as r:
                         data = json.loads(r.read())
                         md = (data.get("data") or {}).get("markdown", "")
                         if r.status == 200 and data.get("success") and len(md) > 100:
@@ -431,7 +437,7 @@ class DataConnector:
                         "Authorization": f"Bearer {fc_key}",
                         "Content-Type": "application/json",
                         "User-Agent": "secfedclaw-watch/2.0"})
-                    with urllib.request.urlopen(req, timeout=30) as r:
+                    with urllib.request.urlopen(req, timeout=self.scrape_timeout) as r:
                         data = json.loads(r.read())
                         md = (data.get("data") or {}).get("markdown", "")
                         if r.status == 200 and data.get("success") and len(md) > 200:
@@ -461,7 +467,7 @@ class DataConnector:
                         "Authorization": f"Bearer {fc_key}",
                         "Content-Type": "application/json",
                         "User-Agent": "secfedclaw-watch/2.0"})
-                    with urllib.request.urlopen(req, timeout=30) as r:
+                    with urllib.request.urlopen(req, timeout=self.scrape_timeout) as r:
                         data = json.loads(r.read())
                         if r.status == 200 and data.get("success"):
                             return self._live(f"social_web_{ticker}", 200, data,
@@ -592,7 +598,7 @@ class DataConnector:
                 req = urllib.request.Request(api_url, data=body, headers={
                     "Authorization": f"Bearer {fc_key}",
                     "Content-Type": "application/json"})
-                with urllib.request.urlopen(req, timeout=30) as r:
+                with urllib.request.urlopen(req, timeout=self.scrape_timeout) as r:
                     data = json.loads(r.read())
                     md = (data.get("data") or {}).get("markdown", "")
                     if r.status == 200 and data.get("success") and len(md) > 100:
@@ -655,7 +661,7 @@ class DataConnector:
                 req = urllib.request.Request(api_url, data=body, headers={
                     "Authorization": f"Bearer {fc_key}",
                     "Content-Type": "application/json"})
-                with urllib.request.urlopen(req, timeout=30) as r:
+                with urllib.request.urlopen(req, timeout=self.scrape_timeout) as r:
                     data = json.loads(r.read())
                     md = (data.get("data") or {}).get("markdown", "")
                     if r.status == 200 and data.get("success") and len(md) > 100:
