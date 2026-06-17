@@ -856,6 +856,7 @@ a:focus-visible{outline:3px solid var(--brand);outline-offset:2px;border-radius:
 .tab[data-id="agents"]::before{content:"A"}
 .tab[data-id="learning"]::before{content:"L"}
 .tab[data-id="status"]::before{content:"S"}
+.tab[data-id="runs"]::before{content:"\25B6"}
 .tab[data-id="llm"]::before{content:"$"}
 .tab[data-id="methodology"]::before{content:"M"}
 .tab[data-id="cases"]::before{content:"\2696"}
@@ -954,6 +955,20 @@ tbody tr:hover{background:#f5f7fb}
 .case .thr{color:var(--med);font-weight:600}.case .train{color:#6b48a8;font-weight:600}
 .worked{border-top-color:var(--med)!important}
 
+/* === RUNS (live control plane) === */
+.runctl{display:flex;gap:var(--s2);align-items:center;flex-wrap:wrap;margin-bottom:var(--s2)}
+.runctl input[type=text]{flex:1;min-width:220px;padding:8px;border:1px solid var(--line);border-radius:var(--radius);font:inherit}
+.runlive{display:flex;align-items:center;gap:5px;font-size:13px;color:var(--muted);white-space:nowrap}
+.runmsg{font-size:13px;color:var(--muted);min-height:18px}
+.runmeta{font-size:13px;margin-bottom:var(--s2);color:var(--muted)}
+.runtable{width:100%;border-collapse:collapse;font-size:13px}
+.runtable th,.runtable td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line)}
+.runtable th{color:var(--muted);font-weight:600}
+.run-pill{display:inline-block;padding:1px 9px;border-radius:10px;font-size:12px;font-weight:700;color:#fff}
+.run-pill.ok{background:var(--ok)}.run-pill.err{background:var(--crit)}
+.run-pill.run{background:var(--med)}.run-pill.na{background:var(--faint)}
+.run-err{color:var(--crit);font-size:12px}
+
 /* === FOOTER === */
 .footer{color:var(--faint);font-size:12px;text-align:center;padding:var(--s5) 0;border-top:1px solid var(--line);margin-top:var(--s4)}
 """
@@ -962,7 +977,8 @@ JS = """
 function show(id,el){document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
 document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
 document.getElementById(id).classList.add('active');el.classList.add('active');
-if(history.replaceState)history.replaceState(null,'','#'+id);}
+if(history.replaceState)history.replaceState(null,'','#'+id);
+if(id==='runs')loadRuns();}
 function filt(p){document.querySelectorAll('#overview [data-priority]').forEach(r=>{
 r.style.display=(p==='ALL'||r.getAttribute('data-priority')===p)?'':'none';});}
 function toggleNav(){
@@ -985,7 +1001,80 @@ window.addEventListener('DOMContentLoaded',function(){
     document.getElementById('navToggle').textContent='☰';
   }}catch(e){}
 });
+
+// === Runs: live status polling + re-run control (talks to the LOCAL serve.py) ===
+function _tok(){try{return new URLSearchParams(location.search).get('token')||'';}catch(e){return '';}}
+function _u(p){var t=_tok();return p+(t?('?token='+encodeURIComponent(t)):'');}
+function _pill(s){var c={done:'ok',error:'err',in_progress:'run'}[s]||'na';return '<span class="run-pill '+c+'">'+(s||'pending')+'</span>';}
+function _esc(s){return String(s==null?'':s).replace(/[&<>]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;'}[c];});}
+function loadRuns(){
+  var panel=document.getElementById('runs');
+  if(!panel||!panel.classList.contains('active'))return;
+  fetch(_u('/run_manifest.json'),{cache:'no-store'}).then(function(r){
+    if(!r.ok)throw new Error('HTTP '+r.status);return r.json();
+  }).then(function(m){
+    var tickers=m.tickers||{};var uni=m.universe||Object.keys(tickers);
+    var running=!m.finished_utc;
+    document.getElementById('runsMeta').innerHTML='Run <b>'+_esc(m.run_id||'—')+'</b> · mode '+_esc(m.mode||'?')+' · '+
+      (running?'<span class="run-pill run">in progress</span>':'finished '+_esc(m.finished_utc||''))+
+      ' · '+Object.keys(tickers).length+'/'+(uni.length||Object.keys(tickers).length)+' tickers';
+    document.getElementById('runsBody').innerHTML=uni.map(function(t){
+      var i=tickers[t]||{};
+      return '<tr><td><b>'+_esc(t)+'</b></td><td>'+_pill(i.status)+'</td><td>'+_esc(i.priority||'')+
+        '</td><td>'+_esc(i.watch_score!=null?i.watch_score:'')+'</td><td>'+_esc(i.ms!=null?i.ms:'')+
+        '</td><td>'+_esc(i.mode||(m.mode||''))+(i.error?(' <span class="run-err">'+_esc(i.error)+'</span>'):'')+'</td></tr>';
+    }).join('');
+    if(running)setTimeout(loadRuns,2000);
+  }).catch(function(e){
+    document.getElementById('runsMeta').innerHTML='<span style="color:var(--faint)">No run yet, or live status needs the local server: <code>python3 serve.py</code> ('+_esc(e.message||e)+')</span>';
+    document.getElementById('runsBody').innerHTML='';
+  });
+}
+function rerun(failed){
+  var msg=document.getElementById('runsMsg');
+  var body={live:document.getElementById('runLive').checked};
+  if(failed){body.failed=true;}
+  else{
+    var raw=(document.getElementById('runTickers').value||'').trim();
+    if(!raw){msg.textContent='Enter at least one ticker.';return;}
+    body.tickers=raw.split(/[\s,]+/).filter(Boolean);
+  }
+  msg.textContent='Starting…';
+  fetch(_u('/api/rerun'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})
+   .then(function(r){return r.text().then(function(t){return {ok:r.ok,status:r.status,t:t};});})
+   .then(function(r){
+     if(r.ok){var j={};try{j=JSON.parse(r.t);}catch(e){}
+       msg.textContent='Started run '+(j.run_id||'')+' ('+(j.mode||'')+': '+((j.universe||[]).join(', '))+')';
+       setTimeout(loadRuns,400);
+     }else{msg.textContent='Error '+r.status+': '+r.t;}
+   }).catch(function(e){msg.textContent='Request failed: '+(e.message||e)+' — is serve.py running?';});
+}
+setInterval(loadRuns,4000);
 """
+
+
+def runs_panel() -> str:
+    """Live run-status view + re-run controls. Static shell; populated at runtime
+    by JS polling /run_manifest.json and POSTing /api/rerun on the LOCAL serve.py
+    (no third-party callbacks). Degrades to a hint when opened as a file:// URL."""
+    return (
+        "<p class='intro'>Live status of scan runs, polled from the local server "
+        "(<code>serve.py</code>). Trigger a re-run below — runs default to "
+        "<b>replay</b>; tick <b>Live</b> to fetch from real data sources. WATCH-only, "
+        "same guardrails as a CLI scan.</p>"
+        "<div class='card'><h3>Trigger a run</h3>"
+        "<div class='runctl'>"
+        "<input id='runTickers' type='text' placeholder='Tickers, e.g. AAPL TSLA GME' aria-label='Tickers to scan'>"
+        "<label class='runlive'><input id='runLive' type='checkbox'> Live</label>"
+        "<button onclick='rerun(false)'>Re-run tickers</button>"
+        "<button onclick='rerun(true)'>Re-run failed</button>"
+        "</div>"
+        "<div id='runsMsg' class='runmsg' role='status' aria-live='polite'></div></div>"
+        "<div class='card'><h3>Current / last run</h3>"
+        "<div id='runsMeta' class='runmeta'>Loading…</div>"
+        "<table class='runtable'><thead><tr><th>Ticker</th><th>Status</th><th>Priority</th>"
+        "<th>Score</th><th>ms</th><th>Mode</th></tr></thead><tbody id='runsBody'></tbody></table>"
+        "</div>")
 
 
 def _tab(label: str, pid: str, active: bool = False) -> str:
@@ -999,7 +1088,7 @@ def build_html(queue: dict, packages: list, bt: dict) -> str:
     tabs = (_tab("Overview", "overview", True) + _tab("Packages", "packages")
             + _tab("Network", "network") + _tab("How it works", "howitworks")
             + _tab("Agents", "agents") + _tab("Learning", "learning")
-            + _tab("Status", "status") + _tab("LLM cost", "llm")
+            + _tab("Status", "status") + _tab("Runs", "runs") + _tab("LLM cost", "llm")
             + _tab("Methodology", "methodology") + _tab("SEC case studies", "cases")
             + _tab("Backtest", "backtest"))
     return (
@@ -1053,6 +1142,8 @@ def build_html(queue: dict, packages: list, bt: dict) -> str:
         f"<section id='learning' class='panel'><h2>Learning pipeline</h2>{learning_panel()}</section>"
         # status
         f"<section id='status' class='panel'><h2>Agent &amp; integration status</h2>{agent_status_panel(queue)}</section>"
+        # runs (live control plane)
+        f"<section id='runs' class='panel'><h2>Runs &amp; live status</h2>{runs_panel()}</section>"
         # llm cost
         f"<section id='llm' class='panel'><h2>LLM usage &amp; cost</h2>{llm_cost_panel()}</section>"
         # methodology
