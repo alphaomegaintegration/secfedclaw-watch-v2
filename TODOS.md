@@ -28,7 +28,7 @@ Priority scale: **P0** = blocking correctness / security · **P1** = high-value 
 
 ### P3
 
-- **favicon 404 on dashboard.** Browser logs `GET /favicon.ico → 404` (console error) on every dashboard load. Cosmetic, no functional impact — deferred from /qa 2026-06-16 (Standard tier). Fix: have `serve.py` return 204 for `/favicon.ico`, or embed a data-URI `<link rel="icon">` in the generated `dashboard_v2.html`.
+- **favicon 404 on dashboard.** ~~Browser logged `GET /favicon.ico → 404` on every load.~~ Fixed 2026-06-17: an inline SVG data-URI `<link rel="icon">` is embedded in the dashboard `<head>`, so the browser never requests `/favicon.ico` (works under serve.py, file://, or any static server). Dashboard console is now clean.
 
 - **Runs: "Re-run failed" with nothing failed logged a console 400.** ~~Clicking Re-run failed when the last run had no errored tickers returned `400`.~~ Fixed by /qa polish 2026-06-17: the client now short-circuits with a friendly "nothing failed" message (no request fired), and a real failure shows a cleaned-up message instead of raw "Error 400".
 
