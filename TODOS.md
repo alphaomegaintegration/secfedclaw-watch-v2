@@ -26,6 +26,10 @@ Priority scale: **P0** = blocking correctness / security · **P1** = high-value 
 
 - **options_flow bar color**: options_flow_score currently reuses the green `.bar-fill` gradient in the component score table. A distinct amber/blue gradient would better convey "this is an options signal, not a direct threat indicator".
 
+### P3
+
+- **favicon 404 on dashboard.** Browser logs `GET /favicon.ico → 404` (console error) on every dashboard load. Cosmetic, no functional impact — deferred from /qa 2026-06-16 (Standard tier). Fix: have `serve.py` return 204 for `/favicon.ico`, or embed a data-URI `<link rel="icon">` in the generated `dashboard_v2.html`.
+
 ---
 
 ## Testing
@@ -33,6 +37,10 @@ Priority scale: **P0** = blocking correctness / security · **P1** = high-value 
 ### P1
 
 - **Configure secrets in GitHub Actions** — `.github/workflows/test-live.yml` is live (commit 46a6f1d, runs Sundays 06:00 UTC). Add secrets in repo Settings → Secrets → Actions: `POLYGON_API_KEY`, `X_BEARER_TOKEN`, `SEC_USER_AGENT`, `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET`, `FMP_API_KEY`, `FIRECRAWL_API_KEY`. Without them tests still pass via replay/NO_GO paths, but live GO verdict won't be tested.
+
+### Fixed
+
+- **`test_serve.py` clobbered the real dashboard** — `test_serves_out_and_redirects_root` wrote a 36-byte stub into `serve.OUT` (the real `out/`), destroying the generated `dashboard_v2.html` on every `pytest` run. Silent because `out/` is gitignored. Fixed by /qa on `feat/phase0-concurrency-manifest` 2026-06-16 (commit b62a39b) — now serves from a `TemporaryDirectory`.
 
 ### P2
 

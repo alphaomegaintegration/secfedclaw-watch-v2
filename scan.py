@@ -22,6 +22,7 @@ import argparse
 import json
 import math
 import sys
+import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -56,6 +57,79 @@ def discover_movers(connector: DataConnector, n: int) -> list[str]:
     return [s for _, s in scored[:n]]
 
 
+def _iso_utc() -> str:
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+
+def run_scan(universe: list[str], *, prefer_live: bool, out_dir: Path | str | None = None,
+             connector: DataConnector | None = None) -> dict:
+    """Run the agent pipeline across `universe`, writing review_queue.json AND an
+    incremental run_manifest.json, and return the queue dict.
+
+    The review_queue.json contents are identical to the pre-Phase-0 pipeline
+    (the manifest is a separate, additive operational artifact). Per-ticker
+    failures never abort the scan.
+    """
+    connector = connector or DataConnector(prefer_live=prefer_live)
+    live = connector.live_available()
+    out_dir = Path(out_dir) if out_dir else (Path(__file__).resolve().parent / "out")
+    out_dir.mkdir(parents=True, exist_ok=True)
+    orch = Orchestrator(connector=connector, out_dir=out_dir)
+
+    # ---- run-manifest: the durable, live operational record (architecture §5.3)
+    manifest = {
+        "run_id": time.strftime("%Y%m%dT%H%M%SZ", time.gmtime()),
+        "mode": "live" if live else "replay",
+        "universe": list(universe),
+        "started_utc": _iso_utc(),
+        "finished_utc": None,
+        "tickers": {},
+    }
+    mpath = out_dir / "run_manifest.json"
+
+    def _write_manifest() -> None:
+        mpath.write_text(json.dumps(manifest, indent=2, default=str) + "\n")
+
+    _write_manifest()
+    results = []
+    for ticker in universe:
+        t0 = time.monotonic()
+        try:
+            summary = orch.run(ticker)
+            results.append(summary)
+            manifest["tickers"][ticker] = {
+                "status": "done",
+                "priority": summary.get("review_priority"),
+                "watch_score": summary.get("watch_score"),
+                "ms": round((time.monotonic() - t0) * 1000),
+                "fetches": {k: v.get("mode") for k, v in (summary.get("source_health") or {}).items()},
+            }
+        except Exception as e:  # never let one ticker abort the scan
+            results.append({"ticker": ticker, "error": f"{type(e).__name__}: {e}",
+                            "review_priority": "LOW", "watch_score": 0})
+            manifest["tickers"][ticker] = {
+                "status": "error", "error": f"{type(e).__name__}: {e}",
+                "ms": round((time.monotonic() - t0) * 1000),
+            }
+        _write_manifest()  # incremental: dashboard can watch progress live
+
+    results.sort(key=lambda r: (PRIORITY_RANK.get(r.get("review_priority", "LOW"), 0),
+                                r.get("watch_score", 0)), reverse=True)
+
+    queue = {
+        "algorithm_version": ALGORITHM_VERSION,
+        "finding_ceiling": FINDING_CEILING,
+        "data_mode": "live" if live else "replay",
+        "universe_size": len(universe),
+        "review_queue": results,
+        "guardrails": "WATCH-only review priorities. Not trading signals or proof of misconduct.",
+    }
+    (out_dir / "review_queue.json").write_text(json.dumps(queue, indent=2, default=str) + "\n")
+    manifest["finished_utc"] = _iso_utc()
+    _write_manifest()
+    return queue
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="SECFEDCLAW v0.2 multi-ticker WATCH scan")
     ap.add_argument("--tickers", nargs="*", help="explicit ticker universe")
@@ -75,7 +149,6 @@ def main() -> int:
             print("No live sources reachable — proceeding in REPLAY mode.")
 
     connector = DataConnector(prefer_live=not args.no_live)
-    live = connector.live_available()
 
     universe = list(args.tickers) if args.tickers else list(DEFAULT_UNIVERSE)
     if args.discover:
@@ -83,30 +156,10 @@ def main() -> int:
             if sym not in universe:
                 universe.append(sym)
 
-    orch = Orchestrator(connector=connector, out_dir=Path(args.out) if args.out else None)
-    results = []
-    for ticker in universe:
-        try:
-            results.append(orch.run(ticker))
-        except Exception as e:  # never let one ticker abort the scan
-            results.append({"ticker": ticker, "error": f"{type(e).__name__}: {e}",
-                            "review_priority": "LOW", "watch_score": 0})
-
-    results.sort(key=lambda r: (PRIORITY_RANK.get(r.get("review_priority", "LOW"), 0),
-                                r.get("watch_score", 0)), reverse=True)
-
-    queue = {
-        "algorithm_version": ALGORITHM_VERSION,
-        "finding_ceiling": FINDING_CEILING,
-        "data_mode": "live" if live else "replay",
-        "universe_size": len(universe),
-        "review_queue": results,
-        "guardrails": "WATCH-only review priorities. Not trading signals or proof of misconduct.",
-    }
     out_dir = Path(args.out) if args.out else (Path(__file__).resolve().parent / "out")
-    out_dir.mkdir(parents=True, exist_ok=True)
-    qpath = out_dir / "review_queue.json"
-    qpath.write_text(json.dumps(queue, indent=2, default=str) + "\n")
+    queue = run_scan(universe, prefer_live=not args.no_live, out_dir=out_dir, connector=connector)
+    live = queue["data_mode"] == "live"
+    results = queue["review_queue"]
 
     # console summary
     print(f"\nSECFEDCLAW v0.2 scan — mode={'LIVE' if live else 'REPLAY'} — {len(universe)} tickers")
@@ -121,7 +174,8 @@ def main() -> int:
               f"{r.get('anomaly_evidence_score',0):>7.1f}{r.get('evidence_quality_score',0):>6.0f}"
               f"{r.get('n_families_active',0):>5}  {r.get('data_mode','?'):<7}")
     print("-" * 78)
-    print(f"Review queue: {qpath}")
+    print(f"Review queue: {out_dir / 'review_queue.json'}")
+    print(f"Run manifest: {out_dir / 'run_manifest.json'}")
     return 0
 
 

@@ -26,7 +26,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from config import fed_claw_root  # noqa: E402
 from connectors import DataConnector  # noqa: E402
+from concurrency import run_concurrent  # noqa: E402
 import scoring_v2  # noqa: E402
+
+# Scout fetches are I/O-bound; fan them out. Concurrency level does NOT affect
+# results — run_concurrent preserves spec order — only latency.
+SCOUT_MAX_WORKERS = 8
 
 # Minimal CIK map for issuer-context lookups; extended dynamically at runtime.
 CIK_MAP = {
@@ -68,38 +73,47 @@ class ScoutAgent:
         c = self.c
         _load_cik_map(c)
         cik = CIK_MAP.get(ticker.upper())
-        fetches = {
-            "daily_range": c.polygon_daily_range(ticker),
-            "grouped": c.polygon_grouped_daily(),
-            "prev": c.polygon_prev(ticker),
-            "snapshot": c.polygon_snapshot(ticker),
-            "trades": c.polygon_trades(ticker),
-            "quotes": c.polygon_quotes(ticker),
-            "x": c.x_recent(ticker),
-            "reddit": c.reddit_oauth(ticker),
-            "stocktwits": c.stocktwits(ticker),
-            "otc_threshold": c.finra_otc_threshold(),
-            "reg_sho": c.reg_sho_threshold(),
-            "halts": c.nasdaq_halts(),
-            "submissions": c.sec_submissions(cik) if cik else type("F", (), {"data": None, "mode": "unavailable", "ok": lambda self: False})(),
-            "edgar": c.edgar_issuer_features(ticker),
-            "litigation": c.sec_litigation_releases(),
-            "discord": c.discord_search(ticker),
-            "instagram": c.instagram_hashtag(ticker),
-            "facebook": c.facebook_search(ticker),
-            "social_web": c.social_web_search(ticker),
-            "fmp_quote": c.fmp_quote(ticker),
-            "fmp_profile": c.fmp_profile(ticker),
-            "fmp_historical": c.fmp_historical(ticker),
-            "splits": c.polygon_splits(ticker),
-            "options": c.polygon_options_snapshot(ticker),
-            "otc_promo": c.otc_promotion_disclosure(ticker),
+
+        def _stub(mode: str):
+            return type("F", (), {"data": None, "mode": mode, "status": None,
+                                  "ok": lambda self: False})()
+
+        # (name, thunk) in a FIXED order. run_concurrent fans these onto a thread
+        # pool (the ~25 fetches are I/O-bound) but rebuilds the dict in THIS order,
+        # not completion order — so source_health / review_queue.json stay stable.
+        specs = [
+            ("daily_range", lambda: c.polygon_daily_range(ticker)),
+            ("grouped", lambda: c.polygon_grouped_daily()),
+            ("prev", lambda: c.polygon_prev(ticker)),
+            ("snapshot", lambda: c.polygon_snapshot(ticker)),
+            ("trades", lambda: c.polygon_trades(ticker)),
+            ("quotes", lambda: c.polygon_quotes(ticker)),
+            ("x", lambda: c.x_recent(ticker)),
+            ("reddit", lambda: c.reddit_oauth(ticker)),
+            ("stocktwits", lambda: c.stocktwits(ticker)),
+            ("otc_threshold", lambda: c.finra_otc_threshold()),
+            ("reg_sho", lambda: c.reg_sho_threshold()),
+            ("halts", lambda: c.nasdaq_halts()),
+            ("submissions", lambda: c.sec_submissions(cik) if cik else _stub("unavailable")),
+            ("edgar", lambda: c.edgar_issuer_features(ticker)),
+            ("litigation", lambda: c.sec_litigation_releases()),
+            ("discord", lambda: c.discord_search(ticker)),
+            ("instagram", lambda: c.instagram_hashtag(ticker)),
+            ("facebook", lambda: c.facebook_search(ticker)),
+            ("social_web", lambda: c.social_web_search(ticker)),
+            ("fmp_quote", lambda: c.fmp_quote(ticker)),
+            ("fmp_profile", lambda: c.fmp_profile(ticker)),
+            ("fmp_historical", lambda: c.fmp_historical(ticker)),
+            ("splits", lambda: c.polygon_splits(ticker)),
+            ("options", lambda: c.polygon_options_snapshot(ticker)),
+            ("otc_promo", lambda: c.otc_promotion_disclosure(ticker)),
             # OpenInsider: fast (2s waitFor), run for all tickers
-            "openinsider": c.openinsider_trades(ticker),
+            ("openinsider", lambda: c.openinsider_trades(ticker)),
             # Glint: slow (4s waitFor); deferred to enrich() for MEDIUM+ only
             # MyFXBook removed — forex-only platform, no signal value for equity surveillance
-            "glint": type("F", (), {"data": None, "mode": "deferred", "ok": lambda self: False})(),
-        }
+            ("glint", lambda: _stub("deferred")),
+        ]
+        fetches = run_concurrent(specs, max_workers=SCOUT_MAX_WORKERS)
         # Reddit availability depends on OAuth creds + reachability; reflect it.
         fetches["reddit_unavailable"] = not fetches["reddit"].ok()
         health = {k: {"mode": getattr(v, "mode", "n/a"), "status": getattr(v, "status", None),

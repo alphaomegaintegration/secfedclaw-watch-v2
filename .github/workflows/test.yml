@@ -18,8 +18,10 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install pytest
-        run: pip install pytest
+      - name: Install test dependencies
+        # numpy is required: model.py / usage.py / dashboard_v2.py import it and
+        # the test suite pulls those in transitively.
+        run: pip install -r requirements-dev.txt
 
       - name: Smoke-test dashboard generator
         # dashboard_v2.py renders from out/ artifacts; --help confirms the module

@@ -38,6 +38,8 @@ Thumbs.db
 
 # probe/scratch
 __probe*
+.playwright-mcp/
+dashboard_check.png
 
 # flat-file cache
 flatfiles/

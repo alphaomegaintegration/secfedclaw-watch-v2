@@ -15,8 +15,10 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import threading
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 import warnings
 from dataclasses import dataclass, field
@@ -24,6 +26,26 @@ from pathlib import Path
 from typing import Any
 
 from config import load_env, fed_claw_root
+from concurrency import RateLimiter, retry
+
+# Per-host rate limiting (active in LIVE mode only — replay does no HTTP). Now
+# that Scout fetches run concurrently, same-host bursts must respect fair-access
+# limits. SEC asks for <=10 req/s; keep headroom. Others get a generous default.
+_HOST_RATE = {"www.sec.gov": 8.0, "data.sec.gov": 8.0, "efts.sec.gov": 8.0}
+_DEFAULT_HOST_RATE = 15.0
+_host_limiters: dict[str, RateLimiter] = {}
+_host_limiters_lock = threading.Lock()
+
+
+def _limiter_for(url: str) -> RateLimiter:
+    host = urllib.parse.urlsplit(url).netloc
+    with _host_limiters_lock:
+        lim = _host_limiters.get(host)
+        if lim is None:
+            rate = _HOST_RATE.get(host, _DEFAULT_HOST_RATE)
+            lim = RateLimiter(rate, burst=max(1, int(rate)))
+            _host_limiters[host] = lim
+        return lim
 
 
 def sha256_bytes(data: bytes) -> str:
@@ -63,6 +85,9 @@ class DataConnector:
         self._live_ok: bool | None = None
         self.artifacts = self.root / "artifacts"
         self.collections = self.root / "collections"
+        self._lock = threading.Lock()  # guards _lrd init + live_available probe under concurrent gather
+        self._http_attempts = 3        # transient-error retries for live HTTP
+        self._http_backoff = 0.5
 
     # ---- live custody: persist raw responses + sha256 -------------------
     def _live(self, name: str, status: int | None, data: Any, url: str | None = None,
@@ -71,9 +96,10 @@ class DataConnector:
         path = sha = None
         try:
             import time as _t
-            if getattr(self, "_lrd", None) is None:
-                self._lrd = self.root / "live_cache" / _t.strftime("%Y%m%dT%H%M%SZ", _t.gmtime())
-            self._lrd.mkdir(parents=True, exist_ok=True)
+            with self._lock:
+                if getattr(self, "_lrd", None) is None:
+                    self._lrd = self.root / "live_cache" / _t.strftime("%Y%m%dT%H%M%SZ", _t.gmtime())
+                self._lrd.mkdir(parents=True, exist_ok=True)
             if isinstance(data, (bytes, bytearray)):
                 raw = bytes(data)
             elif isinstance(data, str):
@@ -91,16 +117,24 @@ class DataConnector:
 
     # ---- live HTTP (graceful) ------------------------------------------
     def _http_json(self, url: str, headers: dict[str, str] | None = None) -> tuple[int | None, Any]:
-        try:
+        def _once() -> tuple[int | None, Any]:
+            _limiter_for(url).acquire()  # per-host fair-access throttle (concurrent gather)
             req = urllib.request.Request(url, headers=headers or {})
-            with urllib.request.urlopen(req, timeout=self.timeout) as r:
-                raw = r.read()
-                try:
-                    return r.status, json.loads(raw)
-                except Exception:
-                    return r.status, raw
-        except urllib.error.HTTPError as e:
-            return e.code, None
+            try:
+                with urllib.request.urlopen(req, timeout=self.timeout) as r:
+                    raw = r.read()
+                    try:
+                        return r.status, json.loads(raw)
+                    except Exception:
+                        return r.status, raw
+            except urllib.error.HTTPError as e:
+                return e.code, None  # definitive HTTP status — do not retry
+        try:
+            # Retry only transient transport errors; HTTPError is handled above
+            # (returned as a value) so 4xx/5xx statuses are never retried here.
+            return retry(_once, attempts=getattr(self, "_http_attempts", 3),
+                         backoff=getattr(self, "_http_backoff", 0.5),
+                         retry_on=(urllib.error.URLError, TimeoutError))
         except Exception:
             self._live_ok = False
             return None, None
@@ -109,16 +143,19 @@ class DataConnector:
         """Cheap probe (cached). Polygon market status is a light endpoint."""
         if self._live_ok is not None:
             return self._live_ok
-        if not self.prefer_live:
-            self._live_ok = False
-            return False
-        pk = self.env.get("POLYGON_API_KEY", "")
-        if not pk:
-            self._live_ok = False
-            return False
-        status, _ = self._http_json(f"https://api.polygon.io/v1/marketstatus/now?apiKey={pk}")
-        self._live_ok = status == 200
-        return self._live_ok
+        with self._lock:  # double-checked: only the first concurrent caller probes
+            if self._live_ok is not None:
+                return self._live_ok
+            if not self.prefer_live:
+                self._live_ok = False
+                return False
+            pk = self.env.get("POLYGON_API_KEY", "")
+            if not pk:
+                self._live_ok = False
+                return False
+            status, _ = self._http_json(f"https://api.polygon.io/v1/marketstatus/now?apiKey={pk}")
+            self._live_ok = status == 200
+            return self._live_ok
 
     # ---- replay (newest matching artifact) -----------------------------
     def _newest(self, *glob_patterns: str) -> Path | None:
