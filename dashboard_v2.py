@@ -1143,6 +1143,15 @@ def build_html(queue: dict, packages: list, bt: dict) -> str:
         "<!doctype html><html lang='en'><head><meta charset='utf-8'>"
         "<meta name='viewport' content='width=device-width,initial-scale=1'>"
         "<title>SECFEDCLAW v0.2 — Surveillance Review Console</title>"
+        # Inline SVG favicon — suppresses the /favicon.ico 404 regardless of how
+        # the file is served (serve.py, file://, any static server). Navy tile +
+        # a magnifier-eye glyph; <, >, # are URL-encoded for a valid data URI.
+        "<link rel='icon' href=\"data:image/svg+xml,"
+        "%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E"
+        "%3Crect width='32' height='32' rx='6' fill='%23112e51'/%3E"
+        "%3Ccircle cx='14' cy='14' r='6' fill='none' stroke='white' stroke-width='2.5'/%3E"
+        "%3Cline x1='18.5' y1='18.5' x2='24' y2='24' stroke='white' stroke-width='2.5' stroke-linecap='round'/%3E"
+        "%3C/svg%3E\">"
         f"<style>{CSS}</style></head><body>"
         # Sidebar nav drawer
         "<nav id='sidebar' class='sidebar'>"

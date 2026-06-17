@@ -43,6 +43,11 @@ class TestDashboardRunsWiring(unittest.TestCase):
         self.assertIn("Nothing failed in the last run", self.html)
         self.assertIn("loadRuns(true)", self.html)
 
+    def test_inline_favicon_present(self):
+        # Suppresses the /favicon.ico 404 without an external request.
+        self.assertIn("rel='icon'", self.html)
+        self.assertIn("data:image/svg+xml", self.html)
+
     def test_no_third_party_callbacks(self):
         # The live view must only call the local server — no external hosts.
         for needle in ("http://", "https://"):
