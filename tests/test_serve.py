@@ -2,6 +2,7 @@
 """Tests for the local dashboard server + digest deep-link."""
 import os
 import sys
+import tempfile
 import threading
 import unittest
 import urllib.request
@@ -16,25 +17,27 @@ import notify
 
 class TestServe(unittest.TestCase):
     def test_serves_out_and_redirects_root(self):
-        out = serve.OUT
-        out.mkdir(parents=True, exist_ok=True)
-        (out / "dashboard_v2.html").write_text("<html><body>SECFEDCLAW</body></html>")
-        srv = serve.make_server(out, "127.0.0.1", 0)
-        port = srv.server_address[1]
-        t = threading.Thread(target=srv.serve_forever, daemon=True)
-        t.start()
-        try:
-            # direct file
-            with urllib.request.urlopen(f"http://127.0.0.1:{port}/dashboard_v2.html", timeout=5) as r:
-                self.assertEqual(r.status, 200)
-                self.assertIn("SECFEDCLAW", r.read().decode())
-            # root redirects to dashboard
-            req = urllib.request.Request(f"http://127.0.0.1:{port}/")
-            with urllib.request.urlopen(req, timeout=5) as r:
-                self.assertEqual(r.status, 200)  # urllib follows the 302
-        finally:
-            srv.shutdown()
-            srv.server_close()
+        # Serve from a TEMP dir, never serve.OUT — writing the stub into the real
+        # out/ clobbered the operator's generated dashboard_v2.html on every run.
+        with tempfile.TemporaryDirectory() as td:
+            out = Path(td)
+            (out / "dashboard_v2.html").write_text("<html><body>SECFEDCLAW</body></html>")
+            srv = serve.make_server(out, "127.0.0.1", 0)
+            port = srv.server_address[1]
+            t = threading.Thread(target=srv.serve_forever, daemon=True)
+            t.start()
+            try:
+                # direct file
+                with urllib.request.urlopen(f"http://127.0.0.1:{port}/dashboard_v2.html", timeout=5) as r:
+                    self.assertEqual(r.status, 200)
+                    self.assertIn("SECFEDCLAW", r.read().decode())
+                # root redirects to dashboard
+                req = urllib.request.Request(f"http://127.0.0.1:{port}/")
+                with urllib.request.urlopen(req, timeout=5) as r:
+                    self.assertEqual(r.status, 200)  # urllib follows the 302
+            finally:
+                srv.shutdown()
+                srv.server_close()
 
 
 class TestDigestLink(unittest.TestCase):
