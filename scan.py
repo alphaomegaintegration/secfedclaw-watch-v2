@@ -88,7 +88,12 @@ def run_scan(universe: list[str], *, prefer_live: bool, out_dir: Path | str | No
     mpath = out_dir / "run_manifest.json"
 
     def _write_manifest() -> None:
-        mpath.write_text(json.dumps(manifest, indent=2, default=str) + "\n")
+        # Atomic: write to a temp file then rename, so a concurrent reader (the
+        # test poll, and the live dashboard polling /run_manifest.json) never sees
+        # a half-written/empty file. os.replace is atomic on the same filesystem.
+        tmp = mpath.with_name(mpath.name + ".tmp")
+        tmp.write_text(json.dumps(manifest, indent=2, default=str) + "\n")
+        tmp.replace(mpath)
 
     _write_manifest()
     results = []

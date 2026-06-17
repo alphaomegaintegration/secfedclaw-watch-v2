@@ -163,7 +163,10 @@ class TestDefaultRunnerIntegration(unittest.TestCase):
             for _ in range(150):  # up to ~3s
                 p = out / "run_manifest.json"
                 if p.exists():
-                    m = json.loads(p.read_text())
+                    try:
+                        m = json.loads(p.read_text())
+                    except (json.JSONDecodeError, ValueError):
+                        m = {}  # tolerate a transient partial read between writes
                     if m.get("finished_utc"):
                         manifest = m
                         break
