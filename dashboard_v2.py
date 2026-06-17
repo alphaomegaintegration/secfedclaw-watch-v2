@@ -43,6 +43,7 @@ DEFS = {
     "families": "Independent source families currently active (market, coordination, social, issuer, halt, issuer_event). HIGH/CRITICAL requires ≥2 — single-source signals are capped.",
     "market_anomaly_score": "Robust price+volume abnormality vs the ticker's own 20/60-day baseline AND vs the same-day market cross-section; high only when BOTH price and volume confirm.",
     "coordination_score": "Near-duplicate post clusters, shared promotional domains, burst synchronization, author concentration, and unanimous-bullish+promo sentiment across X/Reddit/StockTwits.",
+    "social_intel": "Opt-in (SECFEDCLAW_SOCIAL_INTEL): cross-platform coordinated-push detection. Boosts coordination ONLY when a near-duplicate push spans ≥2 platforms by ≥3 distinct accounts AND aligns with a confirmed market move. The optional LLM urgency layer is substring-grounded and advisory — never scored. Never lights an independent family.",
     "issuer_event_score": "EDGAR daily-diff issuer signal: recent insider sales (Form 4/144), dilution/financing (S-1/S-3/424B/EFFECT), delisting or late filings — selling/diluting into promoted demand.",
     "market_structure_score": "FINRA/Nasdaq context: Reg SHO threshold, OTC threshold, short-sale volume. Context only, not proof of naked shorting.",
     "security_class": "Liquidity class (thin/microcap → small → mid → large) that calibrates thresholds: microcaps are more sensitive, large caps need stronger confirmation.",
@@ -170,6 +171,39 @@ def source_health_panel(queue: dict[str, Any]) -> str:
             f'<th class="num">live</th><th class="num">replay</th></tr></thead><tbody>{rows}</tbody></table></div>')
 
 
+def social_intel_card(p: dict[str, Any]) -> str:
+    """Render the Phase 2/3 social-intel evidence — only when present (it's null
+    unless SECFEDCLAW_SOCIAL_INTEL[_LLM] ran). The LLM verdict is shown as
+    advisory; it is never part of the score."""
+    si = p.get("social_intel")
+    if not si or not isinstance(si, dict):
+        return ""
+    status = ["coordinated push" if si.get("coordinated_push") else "no cross-platform push",
+              "market-verified" if si.get("market_verified") else "no market confirm"]
+    if si.get("applied"):
+        status.append(f"+{si.get('coordination_bump', 0)} coordination")
+    out = (f'<p class="small si"><b>&#128225; Social-intel {info("social_intel")}:</b> '
+           f'{esc(" · ".join(status))} · {si.get("n_cross_platform_clusters", 0)} cross-platform '
+           f'cluster(s), up to {si.get("max_unique_authors", 0)} distinct accounts</p>')
+    cls = si.get("cross_platform_clusters") or []
+    if cls:
+        out += '<ul class="small si-list">' + "".join(
+            f'<li>{esc(" + ".join(c.get("platforms", [])))} — {c.get("n_unique_authors", 0)} accounts, '
+            f'{c.get("n_posts", 0)} posts</li>' for c in cls[:4]) + "</ul>"
+    llm = si.get("llm")
+    if llm and isinstance(llm, dict):
+        out += (f'<p class="small si"><b>LLM urgency (advisory):</b> verdict '
+                f'<i>{esc(llm.get("verdict", "none"))}</i> · {llm.get("n_signals_verified", 0)} verified, '
+                f'{llm.get("n_dropped", 0)} dropped · +{llm.get("urgency_bump", 0)} '
+                f'<span class="muted">({esc(llm.get("model") or "?")})</span></p>')
+        vs = llm.get("verified_signals") or []
+        if vs:
+            out += '<ul class="small si-list">' + "".join(
+                f'<li>&ldquo;{esc(s.get("phrase", ""))}&rdquo; '
+                f'<span class="muted">[{esc(s.get("category", ""))}]</span></li>' for s in vs[:5]) + "</ul>"
+    return out
+
+
 def package_cards(packages: list[dict[str, Any]]) -> str:
     cards = []
     for p in sorted(packages, key=lambda d: d.get("watch_score", 0), reverse=True)[:24]:
@@ -208,6 +242,7 @@ def package_cards(packages: list[dict[str, Any]]) -> str:
             f'(×{corr.get("corroboration_multiplier","?")})</p>'
             f'<p class="small"><b>Caps:</b> {esc("; ".join(caps))}</p>'
             + (f'<p class="small warn"><b>Coordination:</b> {len(clusters)} near-duplicate cluster(s)</p>' if clusters else "")
+            + social_intel_card(p)
             + (f'<p class="small enf"><b>Enforcement history (backward-looking):</b> '
                f'{len((p.get("enforcement_history") or {}).get("matched_releases", []))} prior release(s) referenced</p>'
                if (p.get("enforcement_history") or {}).get("matched_releases") else "")
@@ -930,6 +965,7 @@ tbody tr:hover{background:#f5f7fb}
 /* === PACKAGE CARDS === */
 .pkg-head{display:flex;align-items:center;gap:var(--s3);flex-wrap:wrap;margin-bottom:var(--s2)}
 .warn{color:var(--high);font-weight:600}.adv{color:var(--brand)}.model{color:#6b48a8}.enf{color:#8b2d5e}.promo{color:var(--crit);font-weight:600}
+.si{color:#0a6b54}.si-list{margin:2px 0 6px 18px;color:var(--muted)}
 .expl{background:var(--brand-light);border-radius:var(--radius);padding:8px 10px;color:var(--ink);border:1px solid rgba(0,94,162,.15)}
 .rationale{color:var(--muted);border-top:1px dashed var(--line);padding-top:var(--s2);margin-top:var(--s2)}
 
