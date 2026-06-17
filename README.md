@@ -89,6 +89,14 @@ SECFEDCLAW_AUTHORIZED_SOCIAL=1             # opt-in gate
 # >=2 platforms by >=3 distinct accounts AND aligns with a confirmed market move.
 # Quarantined: never lights an independent family, so social-only can't reach HIGH.
 SECFEDCLAW_SOCIAL_INTEL=1                  # opt-in gate
+
+# LLM urgency/FOMO node (requires SECFEDCLAW_SOCIAL_INTEL=1). Off by default.
+# Fires ONLY when a coordinated push is already detected. Subordinate: phrases are
+# substring-grounded against the cited posts (ungrounded dropped), the verdict is
+# advisory-only (never scored), and it can only amplify an already market-verified
+# push (capped). Full prompt+response persisted in the package; cost-tracked via
+# usage.py. Cheap Haiku by default (override with SECFEDCLAW_LLM_MODEL).
+SECFEDCLAW_SOCIAL_INTEL_LLM=1              # opt-in gate (LLM)
 ```
 
 **Remaining additions (by leverage):**

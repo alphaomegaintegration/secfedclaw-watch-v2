@@ -232,6 +232,11 @@ def build_package(ticker: str, fetches: dict[str, Any]) -> dict[str, Any]:
     social_intel_detail = None
     if sintel.enabled():
         social_intel_detail = sintel.coordination_intel(posts, market_anomaly)
+        # Phase 3: LLM urgency/FOMO node — only when a push is detected and the LLM
+        # sub-flag is on. Subordinate: amplifies an already market-verified push
+        # (capped), verdict is advisory-only, ungrounded phrases are dropped.
+        if sintel.llm_enabled() and social_intel_detail.get("coordinated_push"):
+            sintel.attach_urgency(social_intel_detail, posts)
         if social_intel_detail.get("applied"):
             coordination_score = min(coordination_score + social_intel_detail["coordination_bump"], 100.0)
             coord_basis.append(social_intel_detail["basis"])
