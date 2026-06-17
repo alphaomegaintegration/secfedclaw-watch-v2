@@ -471,6 +471,75 @@ possible but prints a warning. Publishing to a public host (e.g. GitHub Pages)
 is **not recommended** and is left entirely to the operator. If no URL is set,
 the digest links to the local `file://` path instead.
 
+### Deploy on AWS (EC2)
+
+This is a stdlib Python daily batch (`daily.py`) plus a localhost dashboard
+(`serve.py`) — not a public web service. A single small **EC2** instance fits it
+best; Lambda/ECS are possible but add complexity the daily-batch + local-dashboard
+shape does not need. **Do not expose the dashboard publicly** — it carries WATCH
+content; reach it over an SSH tunnel.
+
+**1. Instance.** Amazon Linux 2023 or Ubuntu, `t3.small` is plenty. Outbound
+HTTPS must be allowed (the live sources — Polygon, SEC, FINRA, X, etc. — are all
+outbound `:443`); default egress is fine. In the security group, **open only
+port 22 (SSH)** — never `8787`.
+
+```bash
+sudo dnf install -y python3.12 git          # AL2023 (Ubuntu: apt-get install python3 python3-venv git)
+git clone <your-fork-url> secfedclaw-watch-v2 && cd secfedclaw-watch-v2
+python3 -m venv .venv && . .venv/bin/activate
+pip install -r requirements-dev.txt          # numpy (model/usage/dashboard); scan/backtest are stdlib
+python3 -m pytest tests/ -q -m "not slow"     # smoke-check the install
+```
+
+**2. Secrets — use AWS Secrets Manager, not a committed `.env`.** Store the keys
+(`POLYGON_API_KEY`, `SEC_USER_AGENT`, `ANTHROPIC_API_KEY`, …) in one secret and
+materialize `.env` at runtime via an instance role with least-privilege
+`secretsmanager:GetSecretValue` on just that secret:
+
+```bash
+aws secretsmanager get-secret-value --secret-id secfedclaw/env \
+  --query SecretString --output text > .env && chmod 600 .env
+python3 preflight.py        # confirm GO_LIVE / which sources are reachable
+```
+
+**3. Scheduled daily run — systemd timer** (more robust than crontab on a server;
+the repo's `deploy/secfedclaw.cron` also works). EC2 clocks are **UTC**, so set
+the time after the US close (≈21:00 UTC; adjust for DST):
+
+```ini
+# /etc/systemd/system/secfedclaw.service     (Type=oneshot)
+[Service]
+Type=oneshot
+WorkingDirectory=/home/ec2-user/secfedclaw-watch-v2
+ExecStart=/home/ec2-user/secfedclaw-watch-v2/.venv/bin/python daily.py
+# /etc/systemd/system/secfedclaw.timer
+[Timer]
+OnCalendar=Mon-Fri 21:00 UTC
+Persistent=true
+[Install]
+WantedBy=timers.target
+```
+
+```bash
+sudo systemctl daemon-reload && sudo systemctl enable --now secfedclaw.timer
+systemctl list-timers secfedclaw.timer        # confirm next run
+```
+
+**4. View the dashboard — over an SSH tunnel, never a public port.** Run the
+server bound to localhost on the instance and forward it to your laptop:
+
+```bash
+# on the instance (e.g. under tmux/systemd):  python3 serve.py    # 127.0.0.1:8787
+ssh -L 8787:127.0.0.1:8787 ec2-user@<instance>   # then open http://127.0.0.1:8787/
+```
+
+If a team genuinely needs shared access, put it behind an authenticated reverse
+proxy / VPN and start `serve.py --host 0.0.0.0 --token <secret>` (it auto-generates
+a token off-localhost); still keep `8787` closed in the security group and only
+reachable through the proxy. Persisted artifacts live under `out/` (gitignored) —
+snapshot the instance or sync `out/` to S3 if you need custody backups.
+
 ## 15. Enforcement history, per-class calibration, agent status & LLM cost
 
 - **Enforcement-history family** (`features/enforcement.py`) — parses the SEC
