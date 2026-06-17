@@ -22,6 +22,7 @@ import argparse
 import json
 import math
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -30,6 +31,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from config import DEFAULT_UNIVERSE, ALGORITHM_VERSION, FINDING_CEILING  # noqa: E402
 from connectors import DataConnector  # noqa: E402
 from agents import Orchestrator  # noqa: E402
+from concurrency import run_concurrent  # noqa: E402
+
+DEFAULT_WORKERS = 6  # ticker-level fan-out (Phase 0.1); each ticker still fans out its own fetches
 
 PRIORITY_RANK = {"CRITICAL_REVIEW": 3, "HIGH": 2, "MEDIUM": 1, "LOW": 0}
 
@@ -62,13 +66,14 @@ def _iso_utc() -> str:
 
 
 def run_scan(universe: list[str], *, prefer_live: bool, out_dir: Path | str | None = None,
-             connector: DataConnector | None = None) -> dict:
+             connector: DataConnector | None = None, workers: int = DEFAULT_WORKERS) -> dict:
     """Run the agent pipeline across `universe`, writing review_queue.json AND an
     incremental run_manifest.json, and return the queue dict.
 
-    The review_queue.json contents are identical to the pre-Phase-0 pipeline
-    (the manifest is a separate, additive operational artifact). Per-ticker
-    failures never abort the scan.
+    Tickers run concurrently (Phase 0.1, bounded by `workers`); results preserve
+    universe order, so the queue is identical regardless of worker count. The
+    manifest is a separate, additive operational artifact. Per-ticker failures
+    never abort the scan.
     """
     connector = connector or DataConnector(prefer_live=prefer_live)
     live = connector.live_available()
@@ -96,13 +101,13 @@ def run_scan(universe: list[str], *, prefer_live: bool, out_dir: Path | str | No
         tmp.replace(mpath)
 
     _write_manifest()
-    results = []
-    for ticker in universe:
+    mlock = threading.Lock()
+
+    def _process(ticker: str) -> dict:
         t0 = time.monotonic()
         try:
             summary = orch.run(ticker)
-            results.append(summary)
-            manifest["tickers"][ticker] = {
+            entry = {
                 "status": "done",
                 "priority": summary.get("review_priority"),
                 "watch_score": summary.get("watch_score"),
@@ -110,13 +115,20 @@ def run_scan(universe: list[str], *, prefer_live: bool, out_dir: Path | str | No
                 "fetches": {k: v.get("mode") for k, v in (summary.get("source_health") or {}).items()},
             }
         except Exception as e:  # never let one ticker abort the scan
-            results.append({"ticker": ticker, "error": f"{type(e).__name__}: {e}",
-                            "review_priority": "LOW", "watch_score": 0})
-            manifest["tickers"][ticker] = {
-                "status": "error", "error": f"{type(e).__name__}: {e}",
-                "ms": round((time.monotonic() - t0) * 1000),
-            }
-        _write_manifest()  # incremental: dashboard can watch progress live
+            summary = {"ticker": ticker, "error": f"{type(e).__name__}: {e}",
+                       "review_priority": "LOW", "watch_score": 0}
+            entry = {"status": "error", "error": f"{type(e).__name__}: {e}",
+                     "ms": round((time.monotonic() - t0) * 1000)}
+        with mlock:  # serialize manifest mutate + atomic write under concurrency
+            manifest["tickers"][ticker] = entry
+            _write_manifest()  # incremental: dashboard watches progress live
+        return summary
+
+    # Tickers run concurrently; run_concurrent returns results in universe order,
+    # so the sorted queue is identical regardless of `workers`.
+    results_map = run_concurrent([(t, (lambda t=t: _process(t))) for t in universe],
+                                 max_workers=max(1, workers))
+    results = [results_map[t] for t in universe]
 
     results.sort(key=lambda r: (PRIORITY_RANK.get(r.get("review_priority", "LOW"), 0),
                                 r.get("watch_score", 0)), reverse=True)
@@ -142,6 +154,8 @@ def main() -> int:
     ap.add_argument("--no-live", action="store_true", help="force replay mode (skip live fetch)")
     ap.add_argument("--live", action="store_true", help="run preflight then scan live (default is live-if-available)")
     ap.add_argument("--out", default=None, help="output dir for packages")
+    ap.add_argument("--workers", type=int, default=DEFAULT_WORKERS,
+                    help=f"concurrent tickers (default {DEFAULT_WORKERS}); each still fans out its own fetches")
     args = ap.parse_args()
 
     if args.live and not args.no_live:
@@ -162,7 +176,8 @@ def main() -> int:
                 universe.append(sym)
 
     out_dir = Path(args.out) if args.out else (Path(__file__).resolve().parent / "out")
-    queue = run_scan(universe, prefer_live=not args.no_live, out_dir=out_dir, connector=connector)
+    queue = run_scan(universe, prefer_live=not args.no_live, out_dir=out_dir, connector=connector,
+                     workers=args.workers)
     live = queue["data_mode"] == "live"
     results = queue["review_queue"]
 

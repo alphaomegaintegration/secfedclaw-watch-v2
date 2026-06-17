@@ -257,5 +257,27 @@ class TestScanParity(unittest.TestCase):
         self.assertEqual(a, b, "review_queue results diverged from pre-refactor golden")
 
 
+class TestTickerParallelism(unittest.TestCase):
+    """Phase 0.1: tickers scan concurrently but the queue is identical to serial."""
+
+    def _run(self, workers):
+        from scan import run_scan
+        with tempfile.TemporaryDirectory() as td:
+            out = Path(td)
+            run_scan(["AAPL", "TSLA", "GME", "AMC", "NVDA"], prefer_live=False,
+                     out_dir=out, connector=_FakeConnector(), workers=workers)
+            return json.loads((out / "review_queue.json").read_text())
+
+    def test_queue_identical_across_worker_counts(self):
+        serial = json.dumps(_normalize(self._run(1)), sort_keys=True)
+        parallel = json.dumps(_normalize(self._run(5)), sort_keys=True)
+        self.assertEqual(serial, parallel)
+
+    def test_all_tickers_present(self):
+        q = self._run(5)
+        self.assertEqual({r["ticker"] for r in q["review_queue"]},
+                         {"AAPL", "TSLA", "GME", "AMC", "NVDA"})
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
