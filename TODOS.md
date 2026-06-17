@@ -30,6 +30,10 @@ Priority scale: **P0** = blocking correctness / security · **P1** = high-value 
 
 - **favicon 404 on dashboard.** Browser logs `GET /favicon.ico → 404` (console error) on every dashboard load. Cosmetic, no functional impact — deferred from /qa 2026-06-16 (Standard tier). Fix: have `serve.py` return 204 for `/favicon.ico`, or embed a data-URI `<link rel="icon">` in the generated `dashboard_v2.html`.
 
+- **Runs: "Re-run failed" with nothing failed logged a console 400.** ~~Clicking Re-run failed when the last run had no errored tickers returned `400`.~~ Fixed by /qa polish 2026-06-17: the client now short-circuits with a friendly "nothing failed" message (no request fired), and a real failure shows a cleaned-up message instead of raw "Error 400".
+
+- **Runs: polling logged repeated errors when the server is unreachable.** ~~`loadRuns()` polled every 4s and logged a connection error each tick.~~ Fixed by /qa polish 2026-06-17: polling backs off and pauses after 3 consecutive failures; re-activating the Runs tab resets and retries.
+
 ---
 
 ## Testing

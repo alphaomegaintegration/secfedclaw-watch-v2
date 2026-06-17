@@ -1014,7 +1014,7 @@ function show(id,el){document.querySelectorAll('.panel').forEach(p=>p.classList.
 document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
 document.getElementById(id).classList.add('active');el.classList.add('active');
 if(history.replaceState)history.replaceState(null,'','#'+id);
-if(id==='runs')loadRuns();}
+if(id==='runs')loadRuns(true);}
 function filt(p){document.querySelectorAll('#overview [data-priority]').forEach(r=>{
 r.style.display=(p==='ALL'||r.getAttribute('data-priority')===p)?'':'none';});}
 function toggleNav(){
@@ -1043,12 +1043,18 @@ function _tok(){try{return new URLSearchParams(location.search).get('token')||''
 function _u(p){var t=_tok();return p+(t?('?token='+encodeURIComponent(t)):'');}
 function _pill(s){var c={done:'ok',error:'err',in_progress:'run'}[s]||'na';return '<span class="run-pill '+c+'">'+(s||'pending')+'</span>';}
 function _esc(s){return String(s==null?'':s).replace(/[&<>]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;'}[c];});}
-function loadRuns(){
+var _lastManifest=null,_runFails=0,_runPollStop=false;
+function _failedTickers(){var t=(_lastManifest&&_lastManifest.tickers)||{};
+  return Object.keys(t).filter(function(k){return (t[k]||{}).status==='error';});}
+function loadRuns(force){
   var panel=document.getElementById('runs');
   if(!panel||!panel.classList.contains('active'))return;
+  if(force){_runFails=0;_runPollStop=false;}   // manual open/retry resets backoff
+  if(_runPollStop)return;                        // paused after repeated failures
   fetch(_u('/run_manifest.json'),{cache:'no-store'}).then(function(r){
     if(!r.ok)throw new Error('HTTP '+r.status);return r.json();
   }).then(function(m){
+    _runFails=0;_lastManifest=m;
     var tickers=m.tickers||{};var uni=m.universe||Object.keys(tickers);
     var running=!m.finished_utc;
     document.getElementById('runsMeta').innerHTML='Run <b>'+_esc(m.run_id||'—')+'</b> · mode '+_esc(m.mode||'?')+' · '+
@@ -1062,14 +1068,20 @@ function loadRuns(){
     }).join('');
     if(running)setTimeout(loadRuns,2000);
   }).catch(function(e){
-    document.getElementById('runsMeta').innerHTML='<span style="color:var(--faint)">No run yet, or live status needs the local server: <code>python3 serve.py</code> ('+_esc(e.message||e)+')</span>';
+    _runFails++;if(_runFails>=3)_runPollStop=true;  // back off after repeated errors
+    document.getElementById('runsMeta').innerHTML='<span style="color:var(--faint)">No run yet, or live status needs the local server: <code>python3 serve.py</code> ('+_esc(e.message||e)+')'+(_runPollStop?' — polling paused after repeated errors; switch to this tab to retry.':'')+'</span>';
     document.getElementById('runsBody').innerHTML='';
   });
 }
 function rerun(failed){
   var msg=document.getElementById('runsMsg');
   var body={live:document.getElementById('runLive').checked};
-  if(failed){body.failed=true;}
+  if(failed){
+    // Don't fire a request that 400s when nothing failed (avoids a console error).
+    if(_lastManifest&&_failedTickers().length===0){
+      msg.textContent='Nothing failed in the last run — nothing to re-run.';return;}
+    body.failed=true;
+  }
   else{
     var raw=(document.getElementById('runTickers').value||'').trim();
     if(!raw){msg.textContent='Enter at least one ticker.';return;}
@@ -1081,8 +1093,8 @@ function rerun(failed){
    .then(function(r){
      if(r.ok){var j={};try{j=JSON.parse(r.t);}catch(e){}
        msg.textContent='Started run '+(j.run_id||'')+' ('+(j.mode||'')+': '+((j.universe||[]).join(', '))+')';
-       setTimeout(loadRuns,400);
-     }else{msg.textContent='Error '+r.status+': '+r.t;}
+       setTimeout(function(){loadRuns(true);},400);
+     }else{msg.textContent='Could not start run ('+r.status+'): '+r.t.replace(/^\d+\s*/,'').replace(/^Bad Request:\s*/,'');}
    }).catch(function(e){msg.textContent='Request failed: '+(e.message||e)+' — is serve.py running?';});
 }
 setInterval(loadRuns,4000);

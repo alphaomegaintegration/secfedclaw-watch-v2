@@ -35,6 +35,14 @@ class TestDashboardRunsWiring(unittest.TestCase):
         self.assertIn("run_manifest.json", self.html)
         self.assertIn("/api/rerun", self.html)
 
+    def test_runs_polling_backoff_and_no_failed_shortcircuit(self):
+        # QA polish: poll backs off after repeated failures; "Re-run failed" with
+        # nothing failed short-circuits instead of firing a request that 400s.
+        self.assertIn("_runPollStop", self.html)
+        self.assertIn("_failedTickers", self.html)
+        self.assertIn("Nothing failed in the last run", self.html)
+        self.assertIn("loadRuns(true)", self.html)
+
     def test_no_third_party_callbacks(self):
         # The live view must only call the local server — no external hosts.
         for needle in ("http://", "https://"):
