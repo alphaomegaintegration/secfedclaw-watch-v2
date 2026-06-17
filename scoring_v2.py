@@ -36,6 +36,7 @@ from features import temporal as temporal  # noqa: E402
 from features import edgar as edgar_feat  # noqa: E402
 from features import security_class as secclass  # noqa: E402
 from features import enforcement as enf  # noqa: E402
+from features import social_intel as sintel  # noqa: E402
 import social_import  # noqa: E402
 import model as gbm_model  # noqa: E402
 
@@ -221,6 +222,19 @@ def build_package(ticker: str, fetches: dict[str, Any]) -> dict[str, Any]:
         coordination_score = min(coordination_score + 12, 100.0)
         coord_basis.append(
             f"unanimous bullish sentiment ({social_feat['sentiment']['bullish_ratio']}) + promotional posts")
+
+    # ---- Phase 2 social-intel (off by default; SECFEDCLAW_SOCIAL_INTEL=1) ----
+    # Cross-platform coordinated-push detection. Quarantined (G3): feeds ONLY
+    # coordination_score, never lights an independent family. The bump applies
+    # only when the push aligns with a confirmed market move (market_anomaly was
+    # computed independently above), so a social-only push still cannot reach
+    # HIGH without independent market/issuer corroboration.
+    social_intel_detail = None
+    if sintel.enabled():
+        social_intel_detail = sintel.coordination_intel(posts, market_anomaly)
+        if social_intel_detail.get("applied"):
+            coordination_score = min(coordination_score + social_intel_detail["coordination_bump"], 100.0)
+            coord_basis.append(social_intel_detail["basis"])
 
     # ---- official ----
     ctx = off.official_context(
@@ -435,6 +449,8 @@ def build_package(ticker: str, fetches: dict[str, Any]) -> dict[str, Any]:
                                  "near_duplicate_clusters": coord_feat.get("near_duplicate_clusters", []),
                                  "shared_domain_groups": coord_feat.get("shared_domain_groups", []),
                                  "max_posts_in_burst": coord_feat.get("max_posts_in_burst", 0)},
+        # Phase 2: null unless SECFEDCLAW_SOCIAL_INTEL=1 (cross-platform push intel).
+        "social_intel": social_intel_detail,
         "official_context_families": sorted(ctx.get("families", {}).keys()),
         "issuer_name": ctx.get("issuer_name"),
         "evidence": _evidence_rows(fetches, component_scores),

@@ -83,6 +83,12 @@ FIRECRAWL_API_KEY=your_key                 # also powers social_web_search
 
 # Telegram/WhatsApp: operator places lawful exports in out/social_import/
 SECFEDCLAW_AUTHORIZED_SOCIAL=1             # opt-in gate
+
+# Cross-platform coordinated-push intel (deterministic, no LLM). Off by default.
+# Adds a CAPPED boost to coordination_score only when a near-duplicate push spans
+# >=2 platforms by >=3 distinct accounts AND aligns with a confirmed market move.
+# Quarantined: never lights an independent family, so social-only can't reach HIGH.
+SECFEDCLAW_SOCIAL_INTEL=1                  # opt-in gate
 ```
 
 **Remaining additions (by leverage):**
