@@ -26,8 +26,8 @@ auth.json
 *.db
 *.db-*
 *.bin
-artifacts/
-collections/
+artifacts
+collections
 timelines/
 state/
 *.csv
