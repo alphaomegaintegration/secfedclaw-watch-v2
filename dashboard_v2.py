@@ -1009,7 +1009,7 @@ tbody tr:hover{background:#f5f7fb}
 .footer{color:var(--faint);font-size:12px;text-align:center;padding:var(--s5) 0;border-top:1px solid var(--line);margin-top:var(--s4)}
 """
 
-JS = """
+JS = r"""
 function show(id,el){document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
 document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
 document.getElementById(id).classList.add('active');el.classList.add('active');
