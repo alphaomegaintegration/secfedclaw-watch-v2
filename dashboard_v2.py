@@ -884,18 +884,18 @@ a:focus-visible{outline:3px solid var(--brand);outline-offset:2px;border-radius:
 .tab.active{background:rgba(255,255,255,.18);color:#fff;border-color:rgba(255,255,255,.25)}
 .sidebar.collapsed .tab{padding:9px;text-align:center;font-size:0;overflow:visible}
 .sidebar.collapsed .tab::before{font-size:13px;display:block;font-weight:700;color:rgba(255,255,255,.8);line-height:1.6}
-.tab[data-id="overview"]::before{content:"Q"}
-.tab[data-id="packages"]::before{content:"P"}
-.tab[data-id="network"]::before{content:"N"}
-.tab[data-id="howitworks"]::before{content:"?"}
-.tab[data-id="agents"]::before{content:"A"}
-.tab[data-id="learning"]::before{content:"L"}
-.tab[data-id="status"]::before{content:"S"}
-.tab[data-id="runs"]::before{content:"\25B6"}
-.tab[data-id="llm"]::before{content:"$"}
-.tab[data-id="methodology"]::before{content:"M"}
-.tab[data-id="cases"]::before{content:"\2696"}
-.tab[data-id="backtest"]::before{content:"B"}
+.sidebar.collapsed .tab[data-id="overview"]::before{content:"O"}
+.sidebar.collapsed .tab[data-id="packages"]::before{content:"P"}
+.sidebar.collapsed .tab[data-id="network"]::before{content:"N"}
+.sidebar.collapsed .tab[data-id="howitworks"]::before{content:"?"}
+.sidebar.collapsed .tab[data-id="agents"]::before{content:"A"}
+.sidebar.collapsed .tab[data-id="learning"]::before{content:"L"}
+.sidebar.collapsed .tab[data-id="status"]::before{content:"S"}
+.sidebar.collapsed .tab[data-id="runs"]::before{content:"▶"}
+.sidebar.collapsed .tab[data-id="llm"]::before{content:"$"}
+.sidebar.collapsed .tab[data-id="methodology"]::before{content:"M"}
+.sidebar.collapsed .tab[data-id="cases"]::before{content:"⚖"}
+.sidebar.collapsed .tab[data-id="backtest"]::before{content:"B"}
 .panel{display:none;animation:f .15s ease} .panel.active{display:block} @keyframes f{from{opacity:.5}to{opacity:1}}
 
 /* === LAYOUT (content shifts right for sidebar) === */
@@ -1009,7 +1009,7 @@ tbody tr:hover{background:#f5f7fb}
 .footer{color:var(--faint);font-size:12px;text-align:center;padding:var(--s5) 0;border-top:1px solid var(--line);margin-top:var(--s4)}
 """
 
-JS = """
+JS = r"""
 function show(id,el){document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
 document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
 document.getElementById(id).classList.add('active');el.classList.add('active');
