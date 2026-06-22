@@ -110,8 +110,23 @@ def default_prober(env: dict[str, str]) -> dict[str, Callable[[], tuple]]:
             return None, {"error": "FMP_API_KEY not set (optional — Financial Modeling Prep)"}
         return _get(f"https://financialmodelingprep.com/stable/quote?symbol=AAPL&apikey={fmp_key}")
 
+    def scrapegraphai():
+        # Primary web/social scrape+search provider. Readiness = the library is
+        # importable AND an OpenRouter LLM key is present (SearchGraph needs it).
+        # Cheap/read-only: no browser launch or LLM call here.
+        if not env.get("OPENROUTER_API_KEY"):
+            return None, {"error": "OPENROUTER_API_KEY not set (LLM for scrapegraphai)"}
+        try:
+            import importlib.util
+            if importlib.util.find_spec("scrapegraphai") is None:
+                return None, {"error": "scrapegraphai not installed — pip install scrapegraphai"}
+        except Exception as e:
+            return None, {"error": f"{type(e).__name__}: {str(e)[:40]}"}
+        return 200, {"error": "primary scraper (OpenRouter LLM + Playwright)"}
+
     def firecrawl():
-        # Firecrawl powers the openinsider / social_web / discord scrapers. The
+        # Firecrawl is now the FALLBACK scraper behind scrapegraphai. Powers the
+        # openinsider / social_web / discord scrapers when SGAI is unavailable. The
         # credit-usage endpoint returns 200 even on an exhausted account, so a
         # bare reachability check would falsely read "live" while every scrape
         # 402s. Read the balance and report scrape capability honestly.
@@ -135,7 +150,7 @@ def default_prober(env: dict[str, str]) -> dict[str, Callable[[], tuple]]:
 
     return {"polygon": polygon, "flatfiles": flatfiles, "sec_edgar": sec, "x": x,
             "stocktwits": stocktwits, "reddit": reddit, "finra": finra, "fmp": fmp,
-            "firecrawl": firecrawl}
+            "scrapegraphai": scrapegraphai, "firecrawl": firecrawl}
 
 
 # sources whose live availability defines "GO" for the core market engine
@@ -189,10 +204,10 @@ def main() -> int:
     print(f"\nSECFEDCLAW preflight — verdict: {rep['verdict']}  "
           f"({rep['sources_live']}/{rep['sources_total']} live)")
     print("=" * 64)
-    print(f"{'SOURCE':<12}{'LIVE':<6}{'STATUS':<8}{'MODE IF RUN':<26}NOTE")
+    print(f"{'SOURCE':<14}{'LIVE':<6}{'STATUS':<8}{'MODE IF RUN':<26}NOTE")
     print("-" * 64)
     for r in rep["results"]:
-        print(f"{r['source']:<12}{('yes' if r['reachable'] else 'no'):<6}"
+        print(f"{r['source']:<14}{('yes' if r['reachable'] else 'no'):<6}"
               f"{str(r['status']):<8}{r['mode_if_run']:<26}{r['note'][:24]}")
     print("-" * 64)
     print(rep["note"])

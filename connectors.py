@@ -27,6 +27,7 @@ from typing import Any
 
 from config import load_env, fed_claw_root
 from concurrency import RateLimiter, retry
+from scrape_provider import ScrapeProvider, coerce_search_to_posts
 
 # Per-host rate limiting (active in LIVE mode only — replay does no HTTP). Now
 # that Scout fetches run concurrently, same-host bursts must respect fair-access
@@ -88,6 +89,10 @@ class DataConnector:
         # so a stalled scrape fails fast (→ unavailable, non-fatal) instead of stalling
         # the whole ticker. Lets broad live --discover runs actually finish.
         self.scrape_timeout = scrape_timeout
+        # Web/social scrape+search provider: ScrapeGraphAI primary, Firecrawl
+        # fallback (configurable via SCRAPE_PROVIDER_ORDER). One shared instance
+        # so the Chromium concurrency cap is honored across all connectors.
+        self.scraper = ScrapeProvider(self.env, timeout=scrape_timeout)
         self._live_ok: bool | None = None
         self.artifacts = self.root / "artifacts"
         self.collections = self.root / "collections"
@@ -255,28 +260,20 @@ class DataConnector:
             status, data = self._http_json(url, {"Authorization": f"Bearer {bearer}"})
             if status == 200 and data:
                 return self._live(f"x_recent_{ticker}", status, data, url)
-        # Path 2: Firecrawl via Nitter (open-source X frontend, no login needed)
-        fc_key = self.env.get("FIRECRAWL_API_KEY")
-        if fc_key and self.prefer_live:
-            for nitter_host in ("nitter.net", "nitter.privacydev.net"):
-                try:
-                    x_url = f"https://{nitter_host}/search?f=tweets&q=%24{ticker}"
-                    api_url = "https://api.firecrawl.dev/v1/scrape"
-                    body = json.dumps({"url": x_url, "formats": ["markdown"],
-                                       "waitFor": 3000}).encode()
-                    req = urllib.request.Request(api_url, data=body, headers={
-                        "Authorization": f"Bearer {fc_key}",
-                        "Content-Type": "application/json",
-                        "User-Agent": "secfedclaw-watch/2.0"})
-                    with urllib.request.urlopen(req, timeout=self.scrape_timeout) as r:
-                        fc_data = json.loads(r.read())
-                        if r.status == 200 and fc_data.get("success"):
-                            md = (fc_data.get("data") or {}).get("markdown", "")
-                            if len(md) > 200:  # has actual content, not just nav
-                                return self._live(f"x_recent_{ticker}", 200, fc_data,
-                                                  redact(api_url), note=f"x ${ticker} via nitter+firecrawl")
-                except Exception:
-                    continue
+        # Path 2: ScrapeGraphAI web search (primary) -> Firecrawl (fallback).
+        # SearchGraph finds X/Twitter + cross-platform chatter without scraping
+        # X directly, so it survives the auth wall and dead Nitter mirrors.
+        if self.prefer_live:
+            res = self.scraper.search(
+                f"${ticker} stock",
+                prompt=(f"Find recent public posts about ${ticker} / {ticker} stock on "
+                        "X/Twitter and other social platforms from the past week. Return a "
+                        "JSON list named 'posts'; each item has: text, platform, author, url."))
+            if res:
+                posts = coerce_search_to_posts(res.data, platform="x")
+                payload = {"data": posts, "raw": res.data} if posts else {"markdown": res.markdown}
+                return self._live(f"x_recent_{ticker}", 200, payload, res.source,
+                                  note=f"x ${ticker} via {res.provider} search ({len(posts)} posts)")
         return self._replay(f"x_recent_{ticker}", f"*/x_recent_search_{ticker}.json", f"*x_recent_search*{ticker.lower()}*.json")
 
     def reddit_oauth(self, ticker: str, subreddits: list[str] | None = None) -> Fetch:
@@ -374,23 +371,13 @@ class DataConnector:
             if messages:
                 return self._live(f"discord_{ticker}", 200, {"messages": messages}, None,
                                   note=f"discord bot search {len(messages)} msgs across {len(guild_ids)} guild(s)")
-        # Fallback: scrape public Discord server listing pages via Firecrawl
-        fc_key = self.env.get("FIRECRAWL_API_KEY")
-        if fc_key and self.prefer_live:
-            try:
-                url = f"https://disboard.org/search?keyword={ticker}+stock"
-                api_url = "https://api.firecrawl.dev/v1/scrape"
-                body = json.dumps({"url": url, "formats": ["markdown"], "waitFor": 3000}).encode()
-                req = urllib.request.Request(api_url, data=body, headers={
-                    "Authorization": f"Bearer {fc_key}", "Content-Type": "application/json"})
-                with urllib.request.urlopen(req, timeout=self.scrape_timeout) as r:
-                    data = json.loads(r.read())
-                    md = (data.get("data") or {}).get("markdown", "")
-                    if r.status == 200 and data.get("success") and len(md) > 200:
-                        return self._live(f"discord_{ticker}", 200, data,
-                                          redact(api_url), note=f"discord ${ticker} via disboard+firecrawl")
-            except Exception as e:
-                warnings.warn(f"discord firecrawl fetch failed for {ticker!r}: {e}", RuntimeWarning, stacklevel=2)
+        # Fallback: scrape public Discord server listing pages (ScrapeGraphAI
+        # primary -> Firecrawl) for ticker-themed servers.
+        if self.prefer_live:
+            res = self.scraper.scrape(f"https://disboard.org/search?keyword={ticker}+stock")
+            if res and len(res.markdown) > 200:
+                return self._live(f"discord_{ticker}", 200, res.data, res.source,
+                                  note=f"discord ${ticker} via {res.provider}")
         return self._replay(f"discord_{ticker}", f"*/discord_*{ticker}*.json",
                             note="discord unavailable")
 
@@ -398,26 +385,13 @@ class DataConnector:
         """Instagram hashtag search via Picuki (public IG proxy) + Firecrawl.
         Instagram.com requires login; Picuki mirrors public hashtag pages."""
         ticker = ticker.upper()
-        fc_key = self.env.get("FIRECRAWL_API_KEY")
-        if self.prefer_live and fc_key:
+        if self.prefer_live:
             for url in (f"https://www.picuki.com/tag/{ticker.lower()}",
                         f"https://imginn.com/tag/{ticker.lower()}/"):
-                try:
-                    api_url = "https://api.firecrawl.dev/v1/scrape"
-                    body = json.dumps({"url": url, "formats": ["markdown"],
-                                       "waitFor": 3000}).encode()
-                    req = urllib.request.Request(api_url, data=body, headers={
-                        "Authorization": f"Bearer {fc_key}",
-                        "Content-Type": "application/json",
-                        "User-Agent": "secfedclaw-watch/2.0"})
-                    with urllib.request.urlopen(req, timeout=self.scrape_timeout) as r:
-                        data = json.loads(r.read())
-                        md = (data.get("data") or {}).get("markdown", "")
-                        if r.status == 200 and data.get("success") and len(md) > 100:
-                            return self._live(f"instagram_{ticker}", 200, data,
-                                              redact(api_url), note=f"instagram #{ticker.lower()} via picuki+firecrawl")
-                except Exception:
-                    continue
+                res = self.scraper.scrape(url)
+                if res and len(res.markdown) > 100:
+                    return self._live(f"instagram_{ticker}", 200, res.data, res.source,
+                                      note=f"instagram #{ticker.lower()} via {res.provider}")
         return self._replay(f"instagram_{ticker}", f"*/instagram_*{ticker}*.json",
                             note="instagram unavailable")
 
@@ -426,25 +400,13 @@ class DataConnector:
         direct scraping; we use public stock forums (Stockhouse, InvestorsHub)
         which aggregate the same retail discussion that FB groups carry."""
         ticker = ticker.upper()
-        fc_key = self.env.get("FIRECRAWL_API_KEY")
-        if self.prefer_live and fc_key:
+        if self.prefer_live:
             for url in (f"https://stockhouse.com/companies/bullboard?symbol={ticker.lower()}",
                         f"https://investorshub.advfn.com/search/search.aspx?q={ticker}"):
-                try:
-                    api_url = "https://api.firecrawl.dev/v1/scrape"
-                    body = json.dumps({"url": url, "formats": ["markdown"]}).encode()
-                    req = urllib.request.Request(api_url, data=body, headers={
-                        "Authorization": f"Bearer {fc_key}",
-                        "Content-Type": "application/json",
-                        "User-Agent": "secfedclaw-watch/2.0"})
-                    with urllib.request.urlopen(req, timeout=self.scrape_timeout) as r:
-                        data = json.loads(r.read())
-                        md = (data.get("data") or {}).get("markdown", "")
-                        if r.status == 200 and data.get("success") and len(md) > 200:
-                            return self._live(f"forums_{ticker}", 200, data,
-                                              redact(api_url), note=f"stock forums ${ticker} via firecrawl")
-                except Exception:
-                    continue
+                res = self.scraper.scrape(url)
+                if res and len(res.markdown) > 200:
+                    return self._live(f"forums_{ticker}", 200, res.data, res.source,
+                                      note=f"stock forums ${ticker} via {res.provider}")
         return self._replay(f"facebook_{ticker}", f"*/facebook_*{ticker}*.json",
                             note="stock forums unavailable")
 
@@ -453,27 +415,18 @@ class DataConnector:
         investing.com discussions, and other social finance sites for ticker mentions.
         Useful for catching promotion across platforms not directly integrated."""
         ticker = ticker.upper()
-        fc_key = self.env.get("FIRECRAWL_API_KEY")
-        if self.prefer_live and fc_key:
-            # Search finance forums for the ticker
-            urls = [
-                f"https://www.google.com/search?q=%24{ticker}+stock+pump+promotion+site%3Areddit.com+OR+site%3Atwitter.com+OR+site%3Adiscord.com&tbs=qdr:w",
-            ]
-            for search_url in urls:
-                try:
-                    api_url = "https://api.firecrawl.dev/v1/scrape"
-                    body = json.dumps({"url": search_url, "formats": ["markdown"]}).encode()
-                    req = urllib.request.Request(api_url, data=body, headers={
-                        "Authorization": f"Bearer {fc_key}",
-                        "Content-Type": "application/json",
-                        "User-Agent": "secfedclaw-watch/2.0"})
-                    with urllib.request.urlopen(req, timeout=self.scrape_timeout) as r:
-                        data = json.loads(r.read())
-                        if r.status == 200 and data.get("success"):
-                            return self._live(f"social_web_{ticker}", 200, data,
-                                              redact(api_url), note=f"social web search ${ticker} via firecrawl")
-                except Exception as e:
-                    warnings.warn(f"social_web firecrawl fetch failed for {ticker!r}: {e}", RuntimeWarning, stacklevel=2)
+        if self.prefer_live:
+            res = self.scraper.search(
+                f"${ticker} stock pump promotion",
+                prompt=(f"Search Reddit, X/Twitter, Discord and stock forums for promotion "
+                        f"or coordinated hype of ${ticker} / {ticker} stock in the past week. "
+                        "Return a JSON list named 'posts'; each item has: text, platform, "
+                        "author, url."))
+            if res:
+                posts = coerce_search_to_posts(res.data, platform="web")
+                payload = {"posts": posts, "raw": res.data} if posts else {"markdown": res.markdown}
+                return self._live(f"social_web_{ticker}", 200, payload, res.source,
+                                  note=f"social web search ${ticker} via {res.provider} ({len(posts)} hits)")
         return self._replay(f"social_web_{ticker}", f"*/social_web_*{ticker}*.json",
                             note="social web search unavailable")
 
@@ -584,60 +537,29 @@ class DataConnector:
         High-value signal: insiders selling into promoted demand is a classic pump tell.
         No credentials required — public site with clean HTML tables."""
         ticker = ticker.upper()
-        fc_key = self.env.get("FIRECRAWL_API_KEY")
-        if fc_key and self.prefer_live:
-            try:
-                url = f"http://openinsider.com/search?q={ticker}"
-                api_url = "https://api.firecrawl.dev/v1/scrape"
-                body = json.dumps({
-                    "url": url,
-                    "formats": ["markdown"],
-                    "waitFor": 2000,
-                    "includeTags": ["table"],
-                }).encode()
-                req = urllib.request.Request(api_url, data=body, headers={
-                    "Authorization": f"Bearer {fc_key}",
-                    "Content-Type": "application/json"})
-                with urllib.request.urlopen(req, timeout=self.scrape_timeout) as r:
-                    data = json.loads(r.read())
-                    md = (data.get("data") or {}).get("markdown", "")
-                    if r.status == 200 and data.get("success") and len(md) > 100:
-                        return self._live(f"openinsider_{ticker}", 200, {"markdown": md, "url": url},
-                                          redact(api_url),
-                                          note=f"OpenInsider Form 4 trades for {ticker}")
-            except Exception as e:
-                warnings.warn(f"openinsider fetch failed for {ticker!r}: {e}", RuntimeWarning, stacklevel=2)
+        if self.prefer_live:
+            url = f"http://openinsider.com/search?q={ticker}"
+            res = self.scraper.scrape(url)
+            if res and len(res.markdown) > 100:
+                # downstream (_parse_openinsider) reads the markdown table verbatim
+                return self._live(f"openinsider_{ticker}", 200,
+                                  {"markdown": res.markdown, "url": url}, res.source,
+                                  note=f"OpenInsider Form 4 trades for {ticker} via {res.provider}")
         return self._replay(f"openinsider_{ticker}", f"*/openinsider_{ticker}*.json",
-                            note="OpenInsider unavailable — set FIRECRAWL_API_KEY")
+                            note="OpenInsider unavailable — install scrapegraphai or set FIRECRAWL_API_KEY")
 
     # ---- Glint.trade (pump/dump signal tracker) -------------------------
     def glint_trade_signals(self, ticker: str) -> Fetch:
         """Pump-and-dump signal tracker from glint.trade.
         Requires Firecrawl with JS rendering (React SPA with Cloudflare protection)."""
         ticker = ticker.upper()
-        fc_key = self.env.get("FIRECRAWL_API_KEY")
-        if fc_key and self.prefer_live:
-            try:
-                url = f"https://glint.trade/ticker/{ticker}"
-                api_url = "https://api.firecrawl.dev/v1/scrape"
-                body = json.dumps({
-                    "url": url,
-                    "formats": ["markdown"],
-                    "waitFor": 4000,
-                    "mobile": False,
-                }).encode()
-                req = urllib.request.Request(api_url, data=body, headers={
-                    "Authorization": f"Bearer {fc_key}",
-                    "Content-Type": "application/json"})
-                with urllib.request.urlopen(req, timeout=45) as r:
-                    data = json.loads(r.read())
-                    md = (data.get("data") or {}).get("markdown", "")
-                    if r.status == 200 and data.get("success") and len(md) > 100:
-                        return self._live(f"glint_{ticker}", 200, {"markdown": md, "url": url},
-                                          redact(api_url),
-                                          note=f"Glint.trade signals for {ticker}")
-            except Exception as e:
-                warnings.warn(f"glint.trade fetch failed for {ticker!r}: {e}", RuntimeWarning, stacklevel=2)
+        if self.prefer_live:
+            url = f"https://glint.trade/ticker/{ticker}"
+            res = self.scraper.scrape(url)
+            if res and len(res.markdown) > 100:
+                return self._live(f"glint_{ticker}", 200,
+                                  {"markdown": res.markdown, "url": url}, res.source,
+                                  note=f"Glint.trade signals for {ticker} via {res.provider}")
         return self._replay(f"glint_{ticker}", f"*/glint_{ticker}*.json",
                             note="Glint.trade unavailable")
 
@@ -647,29 +569,14 @@ class DataConnector:
         Account: robert.david.brown@gmail.com / profile browngeek666.
         Uses Firecrawl to access community pages; falls back to replay."""
         ticker = ticker.upper()
-        fc_key = self.env.get("FIRECRAWL_API_KEY")
-        if fc_key and self.prefer_live:
-            try:
-                # Community outlook/sentiment page — publicly accessible
-                url = f"https://www.myfxbook.com/community/outlook/{ticker}"
-                api_url = "https://api.firecrawl.dev/v1/scrape"
-                body = json.dumps({
-                    "url": url,
-                    "formats": ["markdown"],
-                    "waitFor": 3000,
-                }).encode()
-                req = urllib.request.Request(api_url, data=body, headers={
-                    "Authorization": f"Bearer {fc_key}",
-                    "Content-Type": "application/json"})
-                with urllib.request.urlopen(req, timeout=self.scrape_timeout) as r:
-                    data = json.loads(r.read())
-                    md = (data.get("data") or {}).get("markdown", "")
-                    if r.status == 200 and data.get("success") and len(md) > 100:
-                        return self._live(f"myfxbook_{ticker}", 200, {"markdown": md, "url": url},
-                                          redact(api_url),
-                                          note=f"MyFXBook community sentiment for {ticker}")
-            except Exception as e:
-                warnings.warn(f"myfxbook fetch failed for {ticker!r}: {e}", RuntimeWarning, stacklevel=2)
+        if self.prefer_live:
+            # Community outlook/sentiment page — publicly accessible
+            url = f"https://www.myfxbook.com/community/outlook/{ticker}"
+            res = self.scraper.scrape(url)
+            if res and len(res.markdown) > 100:
+                return self._live(f"myfxbook_{ticker}", 200,
+                                  {"markdown": res.markdown, "url": url}, res.source,
+                                  note=f"MyFXBook community sentiment for {ticker} via {res.provider}")
         return self._replay(f"myfxbook_{ticker}", f"*/myfxbook_{ticker}*.json",
                             note="MyFXBook unavailable")
 
