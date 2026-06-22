@@ -15,7 +15,6 @@ No secret values are printed. Read-only, bounded probes only.
 from __future__ import annotations
 
 import argparse
-import base64
 import json
 import sys
 import urllib.error
@@ -44,8 +43,6 @@ def default_prober(env: dict[str, str]) -> dict[str, Callable[[], tuple]]:
     pk = env.get("POLYGON_API_KEY", "")
     ua = env.get("SEC_USER_AGENT", "secfedclaw research")
     xb = env.get("X_BEARER_TOKEN") or env.get("TWITTER_BEARER_TOKEN", "")
-    rcid, rcsec = env.get("REDDIT_CLIENT_ID"), env.get("REDDIT_CLIENT_SECRET")
-    rua = env.get("REDDIT_USER_AGENT", "secfedclaw-watch/2.0")
 
     def polygon():
         if not pk:
@@ -58,11 +55,26 @@ def default_prober(env: dict[str, str]) -> dict[str, Callable[[], tuple]]:
         if not (ak and sk):
             return None, {"error": "MASSIVE_FLATFILES_* not set"}
         try:
+            import datetime as _dt
             import flatfiles as ff
-            req = ff.signed_get_request(ak, sk, "us_stocks_sip/day_aggs_v1/")
-            return _get(req.full_url, dict(req.headers))
         except Exception as e:
             return None, {"error": str(e)[:60]}
+        # The creds grant object reads (s3:GetObject) but not bucket listing,
+        # so probing the prefix 'us_stocks_sip/day_aggs_v1/' returns a false 403
+        # NOT_AUTHORIZED even though real downloads succeed. Probe an actual
+        # day-aggs object instead, walking back over the T+1 publish lag,
+        # weekends, and holidays (404 = not published) until one resolves.
+        last = (None, {"error": "no recent day-aggs file resolved"})
+        d = _dt.date.today() - _dt.timedelta(days=2)
+        for _ in range(10):
+            if d.weekday() < 5:  # skip weekends
+                req = ff.signed_get_request(ak, sk, ff.day_aggs_key(d.isoformat()))
+                status, meta = _get(req.full_url, dict(req.headers))
+                if status == 200 or status in (401, 403):
+                    return status, meta  # 200 = live; 401/403 = real auth failure
+                last = (status, meta)   # 404/None = unpublished day; keep walking
+            d -= _dt.timedelta(days=1)
+        return last
 
     def sec():
         return _get("https://www.sec.gov/files/company_tickers.json", {"User-Agent": ua})
@@ -78,13 +90,16 @@ def default_prober(env: dict[str, str]) -> dict[str, Callable[[], tuple]]:
                     {"User-Agent": "secfedclaw-watch/2.0"})
 
     def reddit():
-        if not (rcid and rcsec):
-            return None, {"error": "REDDIT_CLIENT_ID/SECRET not set"}
-        basic = base64.b64encode(f"{rcid}:{rcsec}".encode()).decode()
-        return _get("https://www.reddit.com/api/v1/access_token",
-                    {"Authorization": f"Basic {basic}", "User-Agent": rua,
-                     "Content-Type": "application/x-www-form-urlencoded"},
-                    method="POST", data=b"grant_type=client_credentials")
+        # The connector reaches Reddit via the public RSS feed first (no auth);
+        # OAuth (REDDIT_CLIENT_ID/SECRET) is only an optional fallback. Probe the
+        # same public RSS endpoint the connector uses so health reflects real
+        # behavior instead of a false negative when OAuth creds are absent.
+        subs = "+".join(["pennystocks", "stocks", "wallstreetbets",
+                         "Shortsqueeze", "smallstreetbets", "RobinHoodPennyStocks"])
+        rss = (f"https://www.reddit.com/r/{subs}/search.rss?q=%24AAPL+OR+AAPL"
+               "&restrict_sr=on&sort=new&limit=25&t=week")
+        return _get(rss, {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X "
+                    "10_15_7) AppleWebKit/537.36"})
 
     def finra():
         return _get("https://api.finra.org/metadata/group/otcMarket/name/weeklySummary")
@@ -95,8 +110,32 @@ def default_prober(env: dict[str, str]) -> dict[str, Callable[[], tuple]]:
             return None, {"error": "FMP_API_KEY not set (optional — Financial Modeling Prep)"}
         return _get(f"https://financialmodelingprep.com/stable/quote?symbol=AAPL&apikey={fmp_key}")
 
+    def firecrawl():
+        # Firecrawl powers the openinsider / social_web / discord scrapers. The
+        # credit-usage endpoint returns 200 even on an exhausted account, so a
+        # bare reachability check would falsely read "live" while every scrape
+        # 402s. Read the balance and report scrape capability honestly.
+        fk = env.get("FIRECRAWL_API_KEY", "")
+        if not fk:
+            return None, {"error": "FIRECRAWL_API_KEY not set (optional — web scraping)"}
+        try:
+            req = urllib.request.Request("https://api.firecrawl.dev/v1/team/credit-usage",
+                                         headers={"Authorization": f"Bearer {fk}"})
+            with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
+                body = json.loads(r.read())
+        except urllib.error.HTTPError as e:
+            return e.code, {"error": f"credit-usage HTTP {e.code}"}
+        except Exception as e:
+            return None, {"error": f"{type(e).__name__}: {str(e)[:50]}"}
+        rem = (body.get("data") or {}).get("remaining_credits")
+        if rem is not None and rem <= 0:
+            # account reachable but scraping disabled until credits/billing reset
+            return 402, {"error": "0 credits — scrapers degrade to replay"}
+        return 200, {"error": f"credits_remaining={rem}" if rem is not None else ""}
+
     return {"polygon": polygon, "flatfiles": flatfiles, "sec_edgar": sec, "x": x,
-            "stocktwits": stocktwits, "reddit": reddit, "finra": finra, "fmp": fmp}
+            "stocktwits": stocktwits, "reddit": reddit, "finra": finra, "fmp": fmp,
+            "firecrawl": firecrawl}
 
 
 # sources whose live availability defines "GO" for the core market engine
