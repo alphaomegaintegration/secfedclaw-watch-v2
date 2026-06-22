@@ -24,6 +24,10 @@ from typing import Any, Callable
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from config import load_env, fed_claw_root  # noqa: E402
+from scrape_provider import (  # noqa: E402
+    DEFAULT_MODEL as _SGAI_DEFAULT_MODEL,
+    DEFAULT_OLLAMA_BASE as _SGAI_OLLAMA_BASE,
+)
 
 TIMEOUT = 10
 
@@ -110,8 +114,30 @@ def default_prober(env: dict[str, str]) -> dict[str, Callable[[], tuple]]:
             return None, {"error": "FMP_API_KEY not set (optional — Financial Modeling Prep)"}
         return _get(f"https://financialmodelingprep.com/stable/quote?symbol=AAPL&apikey={fmp_key}")
 
+    def scrapegraphai():
+        # Primary web/social scrape+search provider. Readiness = library import
+        # + the configured LLM backend is reachable. scrape() needs no LLM;
+        # search() uses the LLM below. Cheap/read-only: no browser or LLM call.
+        try:
+            import importlib.util
+            if importlib.util.find_spec("scrapegraphai") is None:
+                return None, {"error": "scrapegraphai not installed — pip install scrapegraphai"}
+        except Exception as e:
+            return None, {"error": f"{type(e).__name__}: {str(e)[:40]}"}
+        model = env.get("SGAI_MODEL") or _SGAI_DEFAULT_MODEL
+        if model.startswith("ollama/"):
+            base = env.get("OLLAMA_BASE_URL") or _SGAI_OLLAMA_BASE
+            status, _ = _get(base + "/api/tags")
+            if status == 200:
+                return 200, {"error": f"primary scraper (local {model})"}
+            return None, {"error": f"Ollama not reachable at {base} — run `ollama serve`"}
+        if not env.get("OPENROUTER_API_KEY"):
+            return None, {"error": "OPENROUTER_API_KEY not set (LLM for scrapegraphai)"}
+        return 200, {"error": f"primary scraper ({model} via OpenRouter)"}
+
     def firecrawl():
-        # Firecrawl powers the openinsider / social_web / discord scrapers. The
+        # Firecrawl is now the FALLBACK scraper behind scrapegraphai. Powers the
+        # openinsider / social_web / discord scrapers when SGAI is unavailable. The
         # credit-usage endpoint returns 200 even on an exhausted account, so a
         # bare reachability check would falsely read "live" while every scrape
         # 402s. Read the balance and report scrape capability honestly.
@@ -135,7 +161,7 @@ def default_prober(env: dict[str, str]) -> dict[str, Callable[[], tuple]]:
 
     return {"polygon": polygon, "flatfiles": flatfiles, "sec_edgar": sec, "x": x,
             "stocktwits": stocktwits, "reddit": reddit, "finra": finra, "fmp": fmp,
-            "firecrawl": firecrawl}
+            "scrapegraphai": scrapegraphai, "firecrawl": firecrawl}
 
 
 # sources whose live availability defines "GO" for the core market engine
@@ -189,10 +215,10 @@ def main() -> int:
     print(f"\nSECFEDCLAW preflight — verdict: {rep['verdict']}  "
           f"({rep['sources_live']}/{rep['sources_total']} live)")
     print("=" * 64)
-    print(f"{'SOURCE':<12}{'LIVE':<6}{'STATUS':<8}{'MODE IF RUN':<26}NOTE")
+    print(f"{'SOURCE':<14}{'LIVE':<6}{'STATUS':<8}{'MODE IF RUN':<26}NOTE")
     print("-" * 64)
     for r in rep["results"]:
-        print(f"{r['source']:<12}{('yes' if r['reachable'] else 'no'):<6}"
+        print(f"{r['source']:<14}{('yes' if r['reachable'] else 'no'):<6}"
               f"{str(r['status']):<8}{r['mode_if_run']:<26}{r['note'][:24]}")
     print("-" * 64)
     print(rep["note"])

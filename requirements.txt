@@ -6,3 +6,23 @@
 #
 # numpy
 # pandas
+#
+# ---- Optional: web/social scraping (PRIMARY provider) -------------------
+# ScrapeGraphAI is the primary scrape/search provider for the social + web
+# connectors (Firecrawl is the fallback). Optional: if absent, those connectors
+# transparently fall back to Firecrawl, then to cached replay. Install it (in a
+# venv — it pulls langchain + Playwright) to enable live web/social/X scraping
+# without a Firecrawl plan:
+#
+#   python3 -m venv .venv && . .venv/bin/activate
+#   pip install scrapegraphai
+#   playwright install chromium
+#
+# Run scan.py / preflight.py with that interpreter. The search() path (X/social)
+# uses an LLM; by default it runs on a LOCAL Ollama model (free, offline, no API
+# key) — install Ollama and `ollama pull gemma4`. To use a hosted LLM instead,
+# set SGAI_MODEL=openai/<model> + OPENROUTER_API_KEY. The scrape() path (page ->
+# markdown) needs no LLM. Tune via SGAI_MODEL / SGAI_MAX_TOKENS / OLLAMA_BASE_URL
+# / SGAI_MAX_BROWSERS / SCRAPE_PROVIDER_ORDER.
+#
+# scrapegraphai
