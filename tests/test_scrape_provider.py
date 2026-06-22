@@ -158,11 +158,28 @@ def test_search_falls_back_to_firecrawl(monkeypatch):
     res = prov.search("$AMC")
     assert res is not None and res.provider == "firecrawl"
 
-def test_search_no_openrouter_key_skips_sgai(monkeypatch):
+def test_search_openai_model_without_key_skips_sgai(monkeypatch):
+    # A hosted (openai/openrouter) model with no key skips SGAI search.
     monkeypatch.setattr(sp, "_scrapegraphai_installed", lambda: True)
     with fake_sgai(search_out={"posts": [{"text": "x"}]}):
-        prov = ScrapeProvider(env={})  # no OPENROUTER key, no firecrawl
+        prov = ScrapeProvider(env={"SGAI_MODEL": "openai/gpt-4o-mini"})  # no key, no firecrawl
         assert prov.search("$AMC") is None
+
+def test_search_local_ollama_needs_no_key(monkeypatch):
+    # Default model is ollama/* -> search runs locally with no API key at all.
+    monkeypatch.setattr(sp, "_scrapegraphai_installed", lambda: True)
+    with fake_sgai(search_out={"posts": [{"text": "y"}]}):
+        prov = ScrapeProvider(env={})  # no OPENROUTER key, no firecrawl
+        res = prov.search("$AMC")
+    assert res is not None and res.provider == "scrapegraphai"
+
+def test_llm_config_local_vs_hosted():
+    local = ScrapeProvider(env={})._llm_config()["llm"]  # default ollama
+    assert local["model"].startswith("ollama/") and "api_key" not in local
+    assert "localhost" in local["base_url"]
+    hosted = ScrapeProvider(env={"SGAI_MODEL": "openai/gpt-4o-mini",
+                                 "OPENROUTER_API_KEY": "k"})._llm_config()["llm"]
+    assert hosted["api_key"] == "k" and "openrouter" in hosted["base_url"]
 
 
 # ---- config plumbing ------------------------------------------------------

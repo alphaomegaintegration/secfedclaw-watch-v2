@@ -18,8 +18,11 @@
 #   pip install scrapegraphai
 #   playwright install chromium
 #
-# Run scan.py / preflight.py with that interpreter. Needs OPENROUTER_API_KEY in
-# .env for the LLM (SearchGraph). Tune via SGAI_MODEL / SGAI_MAX_BROWSERS /
-# SCRAPE_PROVIDER_ORDER.
+# Run scan.py / preflight.py with that interpreter. The search() path (X/social)
+# uses an LLM; by default it runs on a LOCAL Ollama model (free, offline, no API
+# key) — install Ollama and `ollama pull gemma4`. To use a hosted LLM instead,
+# set SGAI_MODEL=openai/<model> + OPENROUTER_API_KEY. The scrape() path (page ->
+# markdown) needs no LLM. Tune via SGAI_MODEL / SGAI_MAX_TOKENS / OLLAMA_BASE_URL
+# / SGAI_MAX_BROWSERS / SCRAPE_PROVIDER_ORDER.
 #
 # scrapegraphai

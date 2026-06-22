@@ -35,7 +35,10 @@ from dataclasses import dataclass
 from typing import Any
 
 OPENROUTER_BASE = "https://openrouter.ai/api/v1"
-DEFAULT_MODEL = "openai/gpt-4o-mini"
+DEFAULT_OLLAMA_BASE = "http://localhost:11434"
+# Default LLM is LOCAL Ollama: free, offline, no API key, no credit wall. Set
+# SGAI_MODEL to an "openai/..." model to use OpenRouter (paid) instead.
+DEFAULT_MODEL = "ollama/gemma4:latest"
 DEFAULT_MAX_TOKENS = 2048
 DEFAULT_MAX_BROWSERS = 2
 DEFAULT_ORDER = ("scrapegraphai", "firecrawl")
@@ -108,15 +111,25 @@ class ScrapeProvider:
         return None
 
     # ---- scrapegraphai (primary) ----------------------------------------
+    def _is_local_llm(self) -> bool:
+        return self.model.startswith("ollama/")
+
     def _llm_config(self) -> dict[str, Any]:
-        # Cap output tokens: scrapegraphai defaults to 16384, which is wasteful
-        # and overflows small OpenRouter budgets. Configurable via SGAI_MAX_TOKENS.
+        # Cap tokens: scrapegraphai defaults to 16384, wasteful and overflows
+        # small budgets. Configurable via SGAI_MAX_TOKENS.
         max_tokens = int(self.env.get("SGAI_MAX_TOKENS") or DEFAULT_MAX_TOKENS)
-        return {"llm": {"model": self.model,
-                        "api_key": self.env.get("OPENROUTER_API_KEY", ""),
-                        "base_url": OPENROUTER_BASE,
-                        "max_tokens": max_tokens},
-                "headless": True, "verbose": False}
+        if self._is_local_llm():
+            # Local Ollama: no API key, no external call, no credit wall.
+            llm = {"model": self.model,
+                   "base_url": self.env.get("OLLAMA_BASE_URL") or DEFAULT_OLLAMA_BASE,
+                   "model_tokens": max_tokens}
+        else:
+            # OpenRouter (or any OpenAI-compatible endpoint).
+            llm = {"model": self.model,
+                   "api_key": self.env.get("OPENROUTER_API_KEY", ""),
+                   "base_url": self.env.get("OPENROUTER_BASE_URL") or OPENROUTER_BASE,
+                   "max_tokens": max_tokens}
+        return {"llm": llm, "headless": True, "verbose": False}
 
     def _sgai_scrape(self, url: str) -> ScrapeResult | None:
         if not _scrapegraphai_installed():
@@ -146,7 +159,10 @@ class ScrapeProvider:
             sem.release()
 
     def _sgai_search(self, query: str, prompt: str | None = None) -> ScrapeResult | None:
-        if not _scrapegraphai_installed() or not self.env.get("OPENROUTER_API_KEY"):
+        if not _scrapegraphai_installed():
+            return None
+        # Hosted models need an API key; local Ollama does not.
+        if not self._is_local_llm() and not self.env.get("OPENROUTER_API_KEY"):
             return None
         sem = _browser_semaphore(self.max_browsers)
         sem.acquire()
