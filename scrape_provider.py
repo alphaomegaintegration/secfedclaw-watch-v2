@@ -43,6 +43,10 @@ DEFAULT_MAX_TOKENS = 2048
 DEFAULT_MAX_BROWSERS = 2
 DEFAULT_ORDER = ("scrapegraphai", "firecrawl")
 _MIN_CONTENT = 50  # markdown shorter than this is treated as "no real content"
+# Wait for the network to settle before reading page.content(), so heavy/JS
+# pages don't raise "page is navigating and changing the content" mid-read.
+DEFAULT_LOAD_STATE = "networkidle"
+DEFAULT_SCRAPE_RETRIES = 2  # outer attempts on a transient navigation/close race
 
 # Module-global cap on concurrent Chromium instances. The scan runs tickers in
 # a thread pool (``--workers``); without this a wide run would launch one
@@ -64,6 +68,38 @@ def _scrapegraphai_installed() -> bool:
         return importlib.util.find_spec("scrapegraphai") is not None
     except Exception:
         return False
+
+
+# Substrings identifying the already-handled scrape race (page still navigating
+# / browser closed). When a scrape fails this way we fall back to Firecrawl/
+# replay, but scrapegraphai's internal asyncio.gather leaves the failed future
+# unretrieved, so asyncio's GC logs a noisy "Task exception was never retrieved"
+# traceback to stderr. We drop *only* those specific records.
+_HANDLED_SCRAPE_ERRORS = (
+    "page is navigating", "TargetClosed", "Failed to scrape",
+    "Target page, context or browser has been closed",
+)
+
+
+def _install_asyncio_noise_filter() -> None:
+    """Idempotently silence asyncio's orphaned-future log for handled scrape
+    races. Surgical: inspects the record's exc_info and only drops the known
+    navigation/close errors — every other asyncio error still surfaces."""
+    import logging
+    log = logging.getLogger("asyncio")
+    if getattr(log, "_secfed_noise_filtered", False):
+        return
+
+    class _ScrapeNoiseFilter(logging.Filter):
+        def filter(self, record: logging.LogRecord) -> bool:
+            if "never retrieved" not in record.getMessage():
+                return True
+            exc = record.exc_info[1] if record.exc_info else None
+            text = f"{type(exc).__name__}: {exc}" if exc else ""
+            return not any(h in text for h in _HANDLED_SCRAPE_ERRORS)
+
+    log.addFilter(_ScrapeNoiseFilter())
+    log._secfed_noise_filtered = True  # type: ignore[attr-defined]
 
 
 def redact(url: str) -> str:
@@ -131,17 +167,33 @@ class ScrapeProvider:
                    "max_tokens": max_tokens}
         return {"llm": llm, "headless": True, "verbose": False}
 
+    def _load_html(self, url: str) -> str:
+        """Render a URL to HTML via scrapegraphai's ChromiumLoader, waiting for
+        the DOM to settle (load_state) to avoid the navigating-page race, and
+        retrying on a transient navigation/close error. Returns "" on failure."""
+        from scrapegraphai.docloaders import ChromiumLoader
+        for _ in range(max(1, DEFAULT_SCRAPE_RETRIES)):
+            try:
+                docs = ChromiumLoader([url], backend="playwright", headless=True,
+                                      load_state=DEFAULT_LOAD_STATE,
+                                      requires_js_support=True,
+                                      retry_limit=1, timeout=self.timeout).load()
+                html = docs[0].page_content if docs else ""
+                if html:
+                    return html
+            except Exception:
+                continue  # navigating / TargetClosed -> retry, else fall through
+        return ""
+
     def _sgai_scrape(self, url: str) -> ScrapeResult | None:
         if not _scrapegraphai_installed():
             return None
+        _install_asyncio_noise_filter()
         sem = _browser_semaphore(self.max_browsers)
         sem.acquire()
         try:
-            from scrapegraphai.docloaders import ChromiumLoader
             import html2text
-            docs = ChromiumLoader([url], backend="playwright", headless=True,
-                                  timeout=self.timeout).load()
-            html = docs[0].page_content if docs else ""
+            html = self._load_html(url)
             if not html:
                 return None
             conv = html2text.HTML2Text()

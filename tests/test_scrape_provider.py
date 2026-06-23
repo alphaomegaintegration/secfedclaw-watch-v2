@@ -247,3 +247,88 @@ def test_connectors_fall_back_to_replay_when_scraper_empty(tmp_path):
     # no live result and no replay artifact under tmp -> unavailable, never crashes
     assert c.openinsider_trades("AMC").mode in ("replay", "unavailable")
     assert c.x_recent("AMC").mode in ("replay", "unavailable")
+
+
+# ---- issue #19: scrape hardening (retry + asyncio noise filter) ----------
+
+import logging
+import contextlib as _cl
+
+@_cl.contextmanager
+def fake_sgai_loader(seq):
+    """Inject a ChromiumLoader whose successive instances behave per `seq`:
+    each item is either an html string (load() returns it) or an Exception
+    instance (load() raises it)."""
+    saved = {k: sys.modules.get(k) for k in ("scrapegraphai", "scrapegraphai.docloaders", "html2text")}
+    calls = {"n": 0}
+
+    class _Doc:
+        def __init__(self, c): self.page_content = c
+
+    class FailingLoader:
+        def __init__(self, urls, **kw): pass
+        def load(self):
+            i = calls["n"]; calls["n"] += 1
+            item = seq[min(i, len(seq) - 1)]
+            if isinstance(item, Exception):
+                raise item
+            return [_Doc(item)]
+
+    class FakeHTML2Text:
+        def __init__(self): self.ignore_links = True; self.body_width = 79
+        def handle(self, h): return "MD:" + h
+
+    pkg = types.ModuleType("scrapegraphai")
+    docl = types.ModuleType("scrapegraphai.docloaders"); docl.ChromiumLoader = FailingLoader
+    pkg.docloaders = docl
+    h2t = types.ModuleType("html2text"); h2t.HTML2Text = FakeHTML2Text
+    sys.modules.update({"scrapegraphai": pkg, "scrapegraphai.docloaders": docl, "html2text": h2t})
+    try:
+        yield calls
+    finally:
+        for k, v in saved.items():
+            sys.modules.pop(k, None) if v is None else sys.modules.__setitem__(k, v)
+
+
+def test_scrape_retries_then_succeeds(monkeypatch):
+    monkeypatch.setattr(sp, "_scrapegraphai_installed", lambda: True)
+    err = RuntimeError("Failed to scrape: Page.content: ... page is navigating and changing the content.")
+    with fake_sgai_loader([err, "<p>" + "real content " * 20 + "</p>"]) as calls:
+        prov = ScrapeProvider(env={})
+        res = prov.scrape("http://openinsider.com/search?q=AMC")
+    assert res is not None and res.provider == "scrapegraphai"
+    assert calls["n"] == 2  # first attempt raised, second succeeded
+
+def test_scrape_gives_up_after_retries_then_none(monkeypatch):
+    monkeypatch.setattr(sp, "_scrapegraphai_installed", lambda: True)
+    err = RuntimeError("Target page, context or browser has been closed")
+    with fake_sgai_loader([err, err, err]) as calls:
+        prov = ScrapeProvider(env={})  # no firecrawl -> None after retries
+        assert prov.scrape("http://x") is None
+    assert calls["n"] == sp.DEFAULT_SCRAPE_RETRIES  # bounded, no infinite loop
+
+
+def _make_record(msg, exc):
+    r = logging.LogRecord("asyncio", logging.ERROR, __file__, 1, msg, None,
+                          (type(exc), exc, None) if exc else None)
+    return r
+
+def test_noise_filter_drops_handled_race_keeps_others():
+    sp._install_asyncio_noise_filter()
+    log = logging.getLogger("asyncio")
+    filt = next(f for f in log.filters if f.__class__.__name__ == "_ScrapeNoiseFilter")
+    # handled scrape race -> dropped
+    nav = _make_record("Task exception was never retrieved",
+                       RuntimeError("Failed to scrape: page is navigating"))
+    assert filt.filter(nav) is False
+    # unrelated unretrieved task -> kept
+    other = _make_record("Task exception was never retrieved", ValueError("kaboom"))
+    assert filt.filter(other) is True
+    # unrelated message entirely -> kept
+    plain = _make_record("some other asyncio error", None)
+    assert filt.filter(plain) is True
+
+def test_noise_filter_is_idempotent():
+    log = logging.getLogger("asyncio")
+    sp._install_asyncio_noise_filter(); sp._install_asyncio_noise_filter()
+    assert sum(1 for f in log.filters if f.__class__.__name__ == "_ScrapeNoiseFilter") == 1
