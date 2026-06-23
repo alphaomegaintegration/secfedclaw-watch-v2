@@ -407,42 +407,64 @@ def _state_dot(state: str) -> str:
     return f'<span class="dot {cls}"></span>{esc(state)}'
 
 
+def _fmt_age(s: int | None) -> str:
+    if s is None:
+        return "—"
+    if s < 90:
+        return f"{s}s"
+    if s < 5400:
+        return f"{round(s / 60)}m"
+    return f"{round(s / 3600)}h"
+
+
 def agent_status_panel(queue: dict[str, Any]) -> str:
     st = agentstatus.build(queue)
-    sysd = st["system"]
+    sysd, llm = st["system"], st["llm"]
     sys_cards = [
+        ("Integrations live", f'{sysd["integrations_live"]}/{sysd["integrations_total"]}',
+         f'{sysd.get("integrations_live_pct", 0)}% reachable'),
         ("Preflight", sysd["preflight_verdict"], "live readiness"),
-        ("Data mode", sysd["data_mode"], "live or replay"),
-        ("Integrations live", f'{sysd["integrations_live"]}/{sysd["integrations_total"]}', "feeds reachable"),
-        ("Model", "trained" if st["model"]["trained"] else "abstaining", f'{st["model"]["n_labels"]} labels'),
-        ("LLM spend", f'${st["llm"]["total_cost_usd"]:.2f}', f'{st["llm"]["n_calls"]} calls'),
-        ("Last run", (sysd["last_run_utc"] or "—")[:16].replace("T", " "), "UTC"),
+        ("Last run", _fmt_age(sysd.get("last_run_age_s")), "ago (at build)"),
+        ("Error rate", f'{round(sysd.get("error_rate", 0) * 100)}%',
+         f'{sysd.get("errors", 0)}/{sysd.get("runs", 0)} tickers'),
+        ("LLM paid", f'${llm.get("paid_cost_usd", 0):.2f}', f'{llm.get("paid_calls", 0)} paid calls'),
+        ("LLM local", f'{llm.get("local_search_calls", 0)} free', "Ollama searches"),
     ]
     kpis = "".join(f'<div class="kpi"><div class="kpi-num">{esc(v)}</div><div class="kpi-lbl">{esc(l)}</div>'
                    f'<div class="kpi-sub">{esc(s)}</div></div>' for l, v, s in sys_cards)
+
+    def _lat(a):
+        p50, mx = a.get("latency_ms"), a.get("max_ms")
+        return f'{p50}/{mx}' if p50 is not None else "—"
+
     agents = "".join(
-        f'<div class="stage"><div class="stage-num">{esc(a["name"])}</div>'
-        f'<div class="agent-state">{_state_dot(a["state"])}</div>'
-        f'<p class="small">{esc(a["role"])}</p>'
-        f'<p class="small out"><b>Depends on:</b> {esc(", ".join(a["depends_on"][:6]))}'
-        f'{"…" if len(a["depends_on"])>6 else ""}</p></div>'
+        f'<tr><td><b>{esc(a["name"])}</b></td><td>{_state_dot(a["state"])}</td>'
+        f'<td class="num">{_lat(a)}</td><td class="num">{a.get("runs", 0)}</td>'
+        f'<td class="small">{esc(a["role"])}</td></tr>'
         for a in st["agents"])
     integ = "".join(
         f'<tr><td>{esc(i["integration"])}</td><td>{_state_dot(i["state"])}</td>'
-        f'<td class="num">{i["ok"]}/{i["total"]}</td><td class="num">{i["live"]}</td>'
-        f'<td class="num">{i["replay"]}</td><td class="num">{i["unavailable"]}</td></tr>'
-        for i in st["integrations"]) or '<tr><td colspan="6" class="muted">No integration health yet — run a scan.</td></tr>'
+        f'<td class="num">{i.get("success_pct", 0)}%</td>'
+        f'<td class="num">{i["live"]}/{i["replay"]}</td>'
+        f'<td class="small">{esc(i.get("provider", "—"))}</td></tr>'
+        for i in st["integrations"]) or '<tr><td colspan="5" class="muted">No integration health yet — run a scan.</td></tr>'
     return (
-        '<p class="intro">Operational status from an agent perspective: each agent\'s live state, the integrations it '
-        'depends on, and per-connection live/replay health. Run <code>scan.py --live</code> to populate live status.</p>'
+        '<p class="intro">SRE view: system SLOs, integration health, and agent performance for the most recent '
+        'scan. Static snapshot — run <code>scan.py --live</code> to refresh.</p>'
         f'<div class="kpis">{kpis}</div>'
-        f'<div class="card"><h3>Agents</h3><div class="pipeline">{agents}</div></div>'
-        '<div class="card"><h3>Integrations &amp; connections</h3>'
-        '<table class="mini"><thead><tr><th>integration</th><th>state</th><th class="num">ok</th>'
-        '<th class="num">live</th><th class="num">replay</th><th class="num">unavail</th></tr></thead>'
+        '<div class="card"><h3>Agent performance</h3>'
+        '<table class="mini"><thead><tr><th>agent</th><th>state</th><th class="num">latency p50/max (ms)</th>'
+        '<th class="num">runs</th><th>role</th></tr></thead>'
+        f'<tbody>{agents}</tbody></table>'
+        '<p class="small muted">latency = per-agent pipeline-stage time across tickers this run (p50 / max ms).</p></div>'
+        '<div class="card"><h3>Integration health</h3>'
+        '<table class="mini"><thead><tr><th>integration</th><th>state</th><th class="num">success</th>'
+        '<th class="num">live/replay</th><th>provider</th></tr></thead>'
         f'<tbody>{integ}</tbody></table>'
-        '<p class="small muted">live = fetched from the source this run · replay = cached custody artifact · '
-        'unavailable = no data (degrades that family, never fabricates).</p></div>')
+        '<p class="small muted">live = fetched this run · replay = cached custody · provider = which scraper '
+        'served it (scrapegraphai primary → firecrawl fallback). '
+        f'LLM: paid ${llm.get("paid_cost_usd", 0):.2f} ({llm.get("paid_calls", 0)} calls) · local/free '
+        f'{llm.get("local_search_calls", 0)} Ollama searches this run ($0, not token-metered).</p></div>')
 
 
 def llm_cost_panel() -> str:

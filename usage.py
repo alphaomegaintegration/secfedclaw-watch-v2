@@ -35,6 +35,10 @@ DEFAULT_PRICING: dict[str, tuple[float, float]] = {
     "gemini-1.5-pro": (1.25, 5.0),
     "gemini-1.5-flash": (0.075, 0.30),
     "gemini": (1.25, 5.0),
+    # Local models run on the operator's machine (Ollama) — genuinely $0. Listed
+    # so they price as known-free instead of "unknown pricing".
+    "ollama": (0.0, 0.0),
+    "local": (0.0, 0.0),
 }
 
 
@@ -61,6 +65,12 @@ def price_for(model: str) -> tuple[float, float, bool]:
     if best:
         return best[1][0], best[1][1], True
     return 0.0, 0.0, False
+
+
+def is_free(model: str) -> bool:
+    """True when the model matched a known zero-price (local) entry."""
+    pin, pout, known = price_for(model)
+    return known and pin == 0.0 and pout == 0.0
 
 
 def cost(model: str, input_tokens: int, output_tokens: int) -> float:
@@ -114,9 +124,15 @@ def summary(path: Path | None = None) -> dict[str, Any]:
             a["cost_usd"] = round(a["cost_usd"] + r.get("cost_usd", 0.0), 6)
         return d
 
+    # Paid vs local-free split: a recorded call is "free" when its model matched
+    # a known zero-price (local) entry. Everything else with cost is "paid".
+    free_calls = sum(1 for r in rows if is_free(r.get("model", "")))
     return {
         "n_calls": len(rows),
         "total_cost_usd": round(sum(r.get("cost_usd", 0.0) for r in rows), 4),
+        "paid_cost_usd": round(sum(r.get("cost_usd", 0.0) for r in rows), 4),
+        "paid_calls": len(rows) - free_calls,
+        "local_free_calls": free_calls,
         "total_input_tokens": sum(r.get("input_tokens", 0) for r in rows),
         "total_output_tokens": sum(r.get("output_tokens", 0) for r in rows),
         "by_model": agg("model"),
