@@ -94,6 +94,14 @@ class RunManager:
     def _default_runner(universe, live, out_dir):
         import scan  # lazy: avoids pulling the whole pipeline into a static serve
         scan.run_scan(list(universe), prefer_live=live, out_dir=out_dir)
+        # Regenerate the static dashboard so baked-in panels (Status/SRE,
+        # overview, agents) reflect the run just completed — without this, only
+        # the live-polled Runs tab updated and Status went stale.
+        try:
+            import dashboard_v2
+            dashboard_v2.render(out_dir=out_dir)
+        except Exception:
+            pass  # a render failure must not break the run / release the lock
 
 
 class Handler(http.server.SimpleHTTPRequestHandler):

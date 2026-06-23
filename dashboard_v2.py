@@ -1236,6 +1236,23 @@ def build_html(queue: dict, packages: list, bt: dict) -> str:
         f"</div></div><script>{JS}</script></body></html>")
 
 
+def render(out_dir: Path | None = None, out_path: Path | None = None) -> tuple[Path, dict]:
+    """Read run artifacts from `out_dir` and write the self-contained dashboard
+    HTML to `out_path`. Reusable entrypoint so a scan (CLI or serve.py rerun)
+    can regenerate the static dashboard and keep its baked-in panels — Status/
+    SRE, overview, agents — in sync with the latest run. Returns (path, stats)."""
+    d = Path(out_dir) if out_dir else OUT
+    out = Path(out_path) if out_path else (d / "dashboard_v2.html")
+    queue = load(d / "review_queue.json", {})
+    bt = load(d / "backtest_results.json", {})
+    packages = [load(p, {}) for p in sorted(d.glob("*_watch_v2.json"))]
+    packages = [p for p in packages if p]
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(build_html(queue, packages, bt))
+    return out, {"queue_rows": len(queue.get("review_queue", [])),
+                 "packages": len(packages), "backtest": bool(bt)}
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(
         description=(
@@ -1248,15 +1265,9 @@ def main() -> int:
     ap.add_argument("--out", default=str(OUT / "dashboard_v2.html"),
                     help="Output path for the rendered HTML file (default: out/dashboard_v2.html)")
     args = ap.parse_args()
-    queue = load(OUT / "review_queue.json", {})
-    bt = load(OUT / "backtest_results.json", {})
-    packages = [load(p, {}) for p in sorted(OUT.glob("*_watch_v2.json"))]
-    packages = [p for p in packages if p]
-    out = Path(args.out)
-    out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(build_html(queue, packages, bt))
+    out, stats = render(out_path=Path(args.out))
     print(f"dashboard: {out}")
-    print(f"  queue rows: {len(queue.get('review_queue', []))}  packages: {len(packages)}  backtest: {'yes' if bt else 'no'}")
+    print(f"  queue rows: {stats['queue_rows']}  packages: {stats['packages']}  backtest: {'yes' if stats['backtest'] else 'no'}")
     return 0
 
 
