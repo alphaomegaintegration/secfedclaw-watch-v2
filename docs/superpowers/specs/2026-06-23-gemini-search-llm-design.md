@@ -22,7 +22,7 @@ single-instance serialization), and cut the Chromium half. Keep local Ollama
 and Firecrawl as fallbacks. No behavior change for the `scrape()` path (it needs
 no LLM).
 
-Decision (locked with operator): use **Gemini** (`gemini-2.0-flash`), key in
+Decision (locked with operator): use **Gemini** (`gemini-2.5-flash`), key in
 `.env` as `GEMINI_API_KEY` (validated, models reachable). Accept the small
 per-scan cost (~$0.10/$0.40 per 1M tokens) and the external dependency for the
 search path; local Ollama remains the offline fallback.
@@ -37,7 +37,7 @@ search path; local Ollama remains the offline fallback.
   `langchain_google_genai` config: `{"model": "google_genai/<model>",
   "api_key": env["GEMINI_API_KEY"], "max_tokens": SGAI_MAX_TOKENS}`. scrapegraphai
   routes Gemini through `langchain_google_genai`.
-- **Default model.** `DEFAULT_MODEL = "gemini-2.0-flash"` (was
+- **Default model.** `DEFAULT_MODEL = "gemini-2.5-flash"` (was
   `ollama/gemma4:latest`). Ollama stays available by setting `SGAI_MODEL=ollama/...`.
 - **search() key gate.** `_sgai_search` requires a key for non-local models;
   generalize the check: local (`ollama/*`) needs none; Gemini needs
@@ -66,7 +66,7 @@ is a Gemini model; lazy-imported so its absence degrades to Ollama/Firecrawl.
 
 | Var | Default | Purpose |
 |-----|---------|---------|
-| `SGAI_MODEL` | `gemini-2.0-flash` | search LLM (gemini\* / ollama/\* / openai/\*) |
+| `SGAI_MODEL` | `gemini-2.5-flash` | search LLM (gemini\* / ollama/\* / openai/\*) |
 | `SGAI_SEARCH_RESULTS` | `3` | pages SearchGraph renders per search |
 | `SGAI_MAX_SEARCHES` | `3` | max concurrent SearchGraph pipelines |
 | `GEMINI_API_KEY` | — | Google AI Studio key (already in `.env`) |
@@ -79,9 +79,9 @@ Existing `SGAI_MAX_TOKENS`, `SGAI_MAX_BROWSERS`, `OLLAMA_BASE_URL`,
 `search()` order stays scrapegraphai → firecrawl → replay. With Gemini default,
 the scrapegraphai leg runs Gemini Flash (fast, concurrent). The LLM-cost view
 (`usage.py`) already prices `gemini*` (the `gemini` key → $1.25/$5 per 1M); add a
-`gemini-2.0-flash` entry at its real rate ($0.10/$0.40). scrapegraphai's internal
+`gemini-2.5-flash` entry at its real rate ($0.10/$0.40). scrapegraphai's internal
 calls remain un-token-metered, so the SRE "local/free" line becomes a
-"search via gemini-2.0-flash" provider note (no longer free, but cheap).
+"search via gemini-2.5-flash" provider note (no longer free, but cheap).
 
 ## Testing
 
@@ -90,7 +90,7 @@ calls remain un-token-metered, so the SRE "local/free" line becomes a
 - `search()` key gate: gemini model without `GEMINI_API_KEY` → skips SGAI
   (falls back), with key → attempts (mocked SearchGraph).
 - `SGAI_SEARCH_RESULTS` / `SGAI_MAX_SEARCHES` honored (config + semaphore).
-- usage: `gemini-2.0-flash` priced (known, paid).
+- usage: `gemini-2.5-flash` priced (known, paid).
 - Hermetic (fake `scrapegraphai`/`langchain_google_genai` modules); full suite
   green on the stdlib CI interpreter.
 - **Live verify:** one real `search($AAPL)` via Gemini returns posts in seconds
@@ -103,3 +103,7 @@ calls remain un-token-metered, so the SRE "local/free" line becomes a
 - Gemini via OpenRouter (free-tier 402s on these prompts — direct Google key
   only).
 - Removing Ollama (kept as the offline/no-cost fallback).
+
+## Build note (2026-06-23)
+
+Verified live: `gemini-2.0-flash` / `-001` return 404 'no longer available' via the langchain google_genai client; **`gemini-2.5-flash`** responds in ~0.6s and is the default. Model string passed to scrapegraphai is `google_genai/gemini-2.5-flash`; set `model_tokens` (context) to silence the chunking warning. Pricing approx $0.30/$2.50 per 1M.
