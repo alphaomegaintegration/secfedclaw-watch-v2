@@ -417,6 +417,18 @@ def _fmt_age(s: int | None) -> str:
     return f"{round(s / 3600)}h"
 
 
+def _fmt_ms(ms) -> str:
+    """Human-readable latency: ms under 1s, s under 1m, else m."""
+    if ms is None:
+        return "—"
+    ms = float(ms)
+    if ms < 1000:
+        return f"{round(ms)}ms"
+    if ms < 60_000:
+        return f"{ms / 1000:.1f}s"
+    return f"{ms / 60_000:.1f}m"
+
+
 def agent_status_panel(queue: dict[str, Any]) -> str:
     st = agentstatus.build(queue)
     sysd, llm = st["system"], st["llm"]
@@ -435,7 +447,7 @@ def agent_status_panel(queue: dict[str, Any]) -> str:
 
     def _lat(a):
         p50, mx = a.get("latency_ms"), a.get("max_ms")
-        return f'{p50}/{mx}' if p50 is not None else "—"
+        return f'{_fmt_ms(p50)} / {_fmt_ms(mx)}' if p50 is not None else "—"
 
     agents = "".join(
         f'<tr><td><b>{esc(a["name"])}</b></td><td>{_state_dot(a["state"])}</td>'
@@ -453,10 +465,11 @@ def agent_status_panel(queue: dict[str, Any]) -> str:
         'scan. Static snapshot — run <code>scan.py --live</code> to refresh.</p>'
         f'<div class="kpis">{kpis}</div>'
         '<div class="card"><h3>Agent performance</h3>'
-        '<table class="mini"><thead><tr><th>agent</th><th>state</th><th class="num">latency p50/max (ms)</th>'
+        '<table class="mini"><thead><tr><th>agent</th><th>state</th><th class="num">latency p50 / max</th>'
         '<th class="num">runs</th><th>role</th></tr></thead>'
         f'<tbody>{agents}</tbody></table>'
-        '<p class="small muted">latency = per-agent pipeline-stage time across tickers this run (p50 / max ms).</p></div>'
+        '<p class="small muted">latency = per-agent pipeline-stage time across tickers this run (p50 / max). '
+        'Scout includes the live web/social fetches, so local-Ollama search latency dominates it.</p></div>'
         '<div class="card"><h3>Integration health</h3>'
         '<table class="mini"><thead><tr><th>integration</th><th>state</th><th class="num">success</th>'
         '<th class="num">live/replay</th><th>provider</th></tr></thead>'
