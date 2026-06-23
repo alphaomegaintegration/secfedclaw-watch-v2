@@ -79,3 +79,15 @@ def test_agent_perf_p50_max_and_errors():
 def test_agent_perf_empty_manifest():
     perf, runs, errors = agent_status.agent_perf({})
     assert perf == {} and runs == 0 and errors == 0
+
+
+# ---- latency formatting (dashboard SRE panel) -----------------------------
+
+def test_fmt_ms_units():
+    import dashboard_v2 as d
+    assert d._fmt_ms(None) == "—"
+    assert d._fmt_ms(0) == "0ms"
+    assert d._fmt_ms(850) == "850ms"
+    assert d._fmt_ms(1500) == "1.5s"
+    assert d._fmt_ms(59000) == "59.0s"
+    assert d._fmt_ms(1_956_594) == "32.6m"   # the SPCX-run Scout latency, readable
