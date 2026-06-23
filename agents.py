@@ -18,6 +18,7 @@ from __future__ import annotations
 import concurrent.futures
 import hashlib
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -32,6 +33,16 @@ import scoring_v2  # noqa: E402
 # Scout fetches are I/O-bound; fan them out. Concurrency level does NOT affect
 # results — run_concurrent preserves spec order — only latency.
 SCOUT_MAX_WORKERS = 8
+
+# The scrape/search connectors tag their custody note "... via <provider>"
+# (scrapegraphai | firecrawl). Parse it so source_health — and the run
+# manifest — record which provider actually served each live fetch.
+_VIA_RE = re.compile(r"\bvia (\w+)")
+
+
+def _provider_from_note(note: str) -> str | None:
+    m = _VIA_RE.search(note or "")
+    return m.group(1) if m else None
 
 # Minimal CIK map for issuer-context lookups; extended dynamically at runtime.
 CIK_MAP = {
@@ -117,7 +128,8 @@ class ScoutAgent:
         # Reddit availability depends on OAuth creds + reachability; reflect it.
         fetches["reddit_unavailable"] = not fetches["reddit"].ok()
         health = {k: {"mode": getattr(v, "mode", "n/a"), "status": getattr(v, "status", None),
-                      "ok": v.ok() if hasattr(v, "ok") else False}
+                      "ok": v.ok() if hasattr(v, "ok") else False,
+                      **({"provider": p} if (p := _provider_from_note(getattr(v, "note", ""))) else {})}
                   for k, v in fetches.items() if hasattr(v, "mode")}
         return {"fetches": fetches, "source_health": health}
 

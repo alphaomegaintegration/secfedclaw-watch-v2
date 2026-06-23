@@ -179,3 +179,28 @@ replay. No secrets logged; source URLs run through `redact()`.
   stocktwits) — those keep their dedicated clients.
 - Raw-tweet fidelity from X directly (SearchGraph returns indexed/aggregated
   social content, by decision #2).
+
+## Target coverage expectations (added 2026-06-23, #19)
+
+Live scrape/search coverage is target-dependent. Observed on calm-tape runs
+after the navigating-page fix (PR #20). All misses degrade gracefully to
+cached replay — none are fatal.
+
+| Connector | Path | Expected | Notes |
+|-----------|------|----------|-------|
+| forums (facebook_search) | scrape | live, reliable | public stock-forum mirrors |
+| instagram | scrape | live (thin) | Picuki/Imginn; small payloads |
+| openinsider | scrape | live (recovered in PR #20) | needs `networkidle`; was racing |
+| x_recent | search (LLM) | live | local Ollama SearchGraph |
+| social_web | search (LLM) | intermittent | LLM sometimes returns < content threshold |
+| discord | scrape | best-effort | Disboard often bot-blocks headless; Firecrawl fallback gets it when it has credits; the Discord bot-API path is the real source |
+| glint | scrape | **replay-only by design** | Cloudflare-protected React SPA; deferred to enrich() for MEDIUM+ and usually blocks headless |
+| myfxbook | scrape | replay-only | forex-oriented; low equity signal, not in default scout set |
+
+Which provider serves a best-effort source varies per run with target behavior
+and Firecrawl credit availability. `run_manifest.json` now records a per-ticker
+`providers` map (`{source: scrapegraphai|firecrawl}`) alongside `fetches`
+(mode), so coverage and the provider that served each live fetch are observable
+per run — e.g. a 2026-06-23 run showed openinsider/instagram/x via scrapegraphai
+and discord/facebook/social_web via the Firecrawl fallback (its credits had
+reset).
