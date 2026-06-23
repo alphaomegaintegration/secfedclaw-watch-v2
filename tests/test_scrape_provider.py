@@ -143,13 +143,21 @@ def test_scrape_skips_trivial_sgai_then_firecrawl(monkeypatch):
 # ---- search(): SearchGraph primary + firecrawl fallback ------------------
 
 def test_search_sgai_primary(monkeypatch):
+    # Default model is now Gemini -> needs GEMINI_API_KEY.
     monkeypatch.setattr(sp, "_scrapegraphai_installed", lambda: True)
     out = {"posts": [{"text": "$AMC squeeze", "platform": "x"}]}
     with fake_sgai(search_out=out):
-        prov = ScrapeProvider(env={"OPENROUTER_API_KEY": "k"})
+        prov = ScrapeProvider(env={"GEMINI_API_KEY": "k"})
         res = prov.search("$AMC stock")
     assert res is not None and res.provider == "scrapegraphai"
     assert coerce_search_to_posts(res.data, "x")[0]["text"] == "$AMC squeeze"
+
+def test_search_gemini_default_without_key_skips_sgai(monkeypatch):
+    # Default Gemini model with no GEMINI_API_KEY -> skip SGAI (fall back).
+    monkeypatch.setattr(sp, "_scrapegraphai_installed", lambda: True)
+    with fake_sgai(search_out={"posts": [{"text": "x"}]}):
+        prov = ScrapeProvider(env={})  # default gemini, no key, no firecrawl
+        assert prov.search("$AMC") is None
 
 def test_search_falls_back_to_firecrawl(monkeypatch):
     monkeypatch.setattr(sp, "_scrapegraphai_installed", lambda: False)
@@ -166,20 +174,31 @@ def test_search_openai_model_without_key_skips_sgai(monkeypatch):
         assert prov.search("$AMC") is None
 
 def test_search_local_ollama_needs_no_key(monkeypatch):
-    # Default model is ollama/* -> search runs locally with no API key at all.
+    # An ollama/* model runs locally with no API key at all.
     monkeypatch.setattr(sp, "_scrapegraphai_installed", lambda: True)
     with fake_sgai(search_out={"posts": [{"text": "y"}]}):
-        prov = ScrapeProvider(env={})  # no OPENROUTER key, no firecrawl
+        prov = ScrapeProvider(env={"SGAI_MODEL": "ollama/gemma3:1b"})  # local, no key
         res = prov.search("$AMC")
     assert res is not None and res.provider == "scrapegraphai"
 
-def test_llm_config_local_vs_hosted():
-    local = ScrapeProvider(env={})._llm_config()["llm"]  # default ollama
+def test_llm_config_gemini_default():
+    g = ScrapeProvider(env={"GEMINI_API_KEY": "gk"})._llm_config()["llm"]  # default gemini
+    assert g["model"] == "google_genai/gemini-2.5-flash" and g["api_key"] == "gk"
+    assert "base_url" not in g and "model_tokens" in g  # not ollama, not openrouter
+
+def test_llm_config_local_and_hosted():
+    local = ScrapeProvider(env={"SGAI_MODEL": "ollama/gemma3:1b"})._llm_config()["llm"]
     assert local["model"].startswith("ollama/") and "api_key" not in local
     assert "localhost" in local["base_url"]
     hosted = ScrapeProvider(env={"SGAI_MODEL": "openai/gpt-4o-mini",
                                  "OPENROUTER_API_KEY": "k"})._llm_config()["llm"]
     assert hosted["api_key"] == "k" and "openrouter" in hosted["base_url"]
+
+def test_search_results_and_concurrency_config():
+    p = ScrapeProvider(env={})
+    assert p.search_results == sp.DEFAULT_SEARCH_RESULTS and p.max_searches == sp.DEFAULT_MAX_SEARCHES
+    p2 = ScrapeProvider(env={"SGAI_SEARCH_RESULTS": "2", "SGAI_MAX_SEARCHES": "1"})
+    assert p2.search_results == 2 and p2.max_searches == 1
 
 
 # ---- config plumbing ------------------------------------------------------

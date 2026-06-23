@@ -429,6 +429,14 @@ def _fmt_ms(ms) -> str:
     return f"{ms / 60_000:.1f}m"
 
 
+def _search_model_short(model: str) -> str:
+    """Short label for the search LLM card: bare model name + free/cloud tag."""
+    if not model:
+        return "—"
+    bare = model.split("/")[-1]
+    return f"{bare} · free" if model.startswith("ollama/") else bare
+
+
 def agent_status_panel(queue: dict[str, Any]) -> str:
     st = agentstatus.build(queue)
     sysd, llm = st["system"], st["llm"]
@@ -440,7 +448,7 @@ def agent_status_panel(queue: dict[str, Any]) -> str:
         ("Error rate", f'{round(sysd.get("error_rate", 0) * 100)}%',
          f'{sysd.get("errors", 0)}/{sysd.get("runs", 0)} tickers'),
         ("LLM paid", f'${llm.get("paid_cost_usd", 0):.2f}', f'{llm.get("paid_calls", 0)} paid calls'),
-        ("LLM local", f'{llm.get("local_search_calls", 0)} free', "Ollama searches"),
+        ("Search LLM", f'{llm.get("search_calls", 0)} calls', _search_model_short(llm.get("search_model", ""))),
     ]
     kpis = "".join(f'<div class="kpi"><div class="kpi-num">{esc(v)}</div><div class="kpi-lbl">{esc(l)}</div>'
                    f'<div class="kpi-sub">{esc(s)}</div></div>' for l, v, s in sys_cards)
@@ -476,8 +484,9 @@ def agent_status_panel(queue: dict[str, Any]) -> str:
         f'<tbody>{integ}</tbody></table>'
         '<p class="small muted">live = fetched this run · replay = cached custody · provider = which scraper '
         'served it (scrapegraphai primary → firecrawl fallback). '
-        f'LLM: paid ${llm.get("paid_cost_usd", 0):.2f} ({llm.get("paid_calls", 0)} calls) · local/free '
-        f'{llm.get("local_search_calls", 0)} Ollama searches this run ($0, not token-metered).</p></div>')
+        f'LLM: paid ${llm.get("paid_cost_usd", 0):.2f} ({llm.get("paid_calls", 0)} calls) · search '
+        f'{llm.get("search_calls", 0)} via {esc(llm.get("search_model", "—"))} '
+        '(scrapegraphai internal calls are not token-metered).</p></div>')
 
 
 def llm_cost_panel() -> str:

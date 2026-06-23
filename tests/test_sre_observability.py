@@ -91,3 +91,9 @@ def test_fmt_ms_units():
     assert d._fmt_ms(1500) == "1.5s"
     assert d._fmt_ms(59000) == "59.0s"
     assert d._fmt_ms(1_956_594) == "32.6m"   # the SPCX-run Scout latency, readable
+
+
+def test_gemini_flash_priced_paid():
+    pin, pout, known = usage.price_for("google_genai/gemini-2.5-flash")
+    assert known and (pin, pout) == (0.30, 2.50)   # longest-match beats generic 'gemini'
+    assert usage.is_free("google_genai/gemini-2.5-flash") is False

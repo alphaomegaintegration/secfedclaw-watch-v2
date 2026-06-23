@@ -125,12 +125,21 @@ def default_prober(env: dict[str, str]) -> dict[str, Callable[[], tuple]]:
         except Exception as e:
             return None, {"error": f"{type(e).__name__}: {str(e)[:40]}"}
         model = env.get("SGAI_MODEL") or _SGAI_DEFAULT_MODEL
-        if model.startswith("ollama/"):
+        ml = model.lower()
+        if ml.startswith("ollama/"):
             base = env.get("OLLAMA_BASE_URL") or _SGAI_OLLAMA_BASE
             status, _ = _get(base + "/api/tags")
             if status == 200:
                 return 200, {"error": f"primary scraper (local {model})"}
             return None, {"error": f"Ollama not reachable at {base} — run `ollama serve`"}
+        if ml.startswith("gemini") or ml.startswith("google_genai/") or ml.startswith("google/"):
+            gk = env.get("GEMINI_API_KEY", "")
+            if not gk:
+                return None, {"error": "GEMINI_API_KEY not set (LLM for scrapegraphai search)"}
+            status, _ = _get(f"https://generativelanguage.googleapis.com/v1beta/models?key={gk}")
+            if status == 200:
+                return 200, {"error": f"primary scraper ({model})"}
+            return None, {"error": f"Gemini key rejected (HTTP {status})"}
         if not env.get("OPENROUTER_API_KEY"):
             return None, {"error": "OPENROUTER_API_KEY not set (LLM for scrapegraphai)"}
         return 200, {"error": f"primary scraper ({model} via OpenRouter)"}
