@@ -26,7 +26,6 @@ optional dependency. No secret values are logged; source URLs are redacted.
 """
 from __future__ import annotations
 
-import contextlib
 import importlib.util
 import json
 import re
@@ -91,23 +90,31 @@ def _scrapegraphai_installed() -> bool:
         return False
 
 
-@contextlib.contextmanager
-def _quiet_llm_logs():
-    """Quiet scrapegraphai/langchain log noise during a SearchGraph run: the
-    per-attempt retry notices and langchain's benign 'Unexpected argument
-    model_tokens' (scrapegraphai forwards its chunking key to the Gemini client,
-    which ignores it). Errors still surface (level stays ERROR)."""
-    import logging
-    names = ("scrapegraphai", "langchain", "langchain_google_genai",
-             "langchain_core", "httpx", "google_genai")
-    saved = {n: logging.getLogger(n).level for n in names}
-    for n in names:
-        logging.getLogger(n).setLevel(logging.ERROR)
-    try:
-        yield
-    finally:
-        for n, lvl in saved.items():
-            logging.getLogger(n).setLevel(lvl)
+_noise_quieted = False
+_noise_lock = threading.Lock()
+
+
+def _quiet_sgai_noise() -> None:
+    """Quiet scrapegraphai/langchain log noise once, process-wide (idempotent):
+    the per-attempt ChromiumLoader retry notices ('Attempt N failed…') and
+    langchain's benign 'Unexpected argument model_tokens' (scrapegraphai
+    forwards its chunking key to the Gemini client, which ignores it). Set once
+    and left — NOT a per-call context manager, which would race across the
+    scan's parallel workers (one thread restoring the level mid-run in another).
+    ERROR-level messages still surface."""
+    global _noise_quieted
+    if _noise_quieted:
+        return
+    with _noise_lock:
+        if _noise_quieted:
+            return
+        import logging
+        import warnings
+        for n in ("scrapegraphai", "langchain", "langchain_google_genai",
+                  "langchain_core", "httpx", "google_genai"):
+            logging.getLogger(n).setLevel(logging.ERROR)
+        warnings.filterwarnings("ignore", message=r".*Unexpected argument.*")
+        _noise_quieted = True
 
 
 # Substrings identifying the already-handled scrape race (page still navigating
@@ -252,6 +259,7 @@ class ScrapeProvider:
         if not _scrapegraphai_installed():
             return None
         _install_asyncio_noise_filter()
+        _quiet_sgai_noise()
         sem = _browser_semaphore(self.max_browsers)
         sem.acquire()
         try:
@@ -290,10 +298,10 @@ class ScrapeProvider:
                 "X/Twitter, Reddit, StockTwits and stock forums from the past week. "
                 "Return a JSON list named 'posts'; each item has: text, platform, "
                 "author, url.")
-            with _quiet_llm_logs():
-                graph = SearchGraph(prompt=ask,
-                                    config={**self._llm_config(), "max_results": self.search_results})
-                out = graph.run()
+            _quiet_sgai_noise()
+            graph = SearchGraph(prompt=ask,
+                                config={**self._llm_config(), "max_results": self.search_results})
+            out = graph.run()
             md = out if isinstance(out, str) else json.dumps(out, default=str)
             if not md or len(md) < 20:
                 return None
