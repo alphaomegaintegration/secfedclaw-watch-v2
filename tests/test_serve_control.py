@@ -178,6 +178,28 @@ class TestDefaultRunnerIntegration(unittest.TestCase):
             srv.server_close()
             td.cleanup()
 
+    def test_default_runner_regenerates_dashboard(self):
+        # A server-triggered rerun must regenerate dashboard_v2.html so the
+        # baked-in Status/SRE panel reflects the new run (not just the Runs tab).
+        td = __import__("tempfile").TemporaryDirectory()
+        out = Path(td.name)
+        srv, port, rm = _start(out)  # real RunManager → real scan + dashboard render
+        try:
+            r = _post(port, "/api/rerun", {"tickers": ["AAPL"]})
+            self.assertEqual(r.status, 202)
+            html = out / "dashboard_v2.html"
+            written = False
+            for _ in range(250):  # up to ~5s (scan + render)
+                if html.exists() and html.stat().st_size > 0:
+                    written = True
+                    break
+                time.sleep(0.02)
+            self.assertTrue(written, "rerun should regenerate dashboard_v2.html")
+        finally:
+            srv.shutdown()
+            srv.server_close()
+            td.cleanup()
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
