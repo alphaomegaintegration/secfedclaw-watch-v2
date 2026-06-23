@@ -20,6 +20,7 @@ import hashlib
 import json
 import re
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
@@ -275,23 +276,34 @@ class Orchestrator:
         self.packager = PackagerAgent(out_dir)
 
     def run(self, ticker: str) -> dict[str, Any]:
-        gathered = self.scout.gather(ticker)
+        # Per-agent stage timing for the SRE dashboard (ms, accumulated by agent).
+        stage_ms: dict[str, float] = {}
+
+        def _timed(agent: str, fn):
+            t0 = time.monotonic()
+            try:
+                return fn()
+            finally:
+                stage_ms[agent] = round(stage_ms.get(agent, 0.0) + (time.monotonic() - t0) * 1000, 1)
+
+        gathered = _timed("Scout", lambda: self.scout.gather(ticker))
         # Pass 1: score without Glint/MyFXBook (they're deferred stubs)
-        package = self.analyst.score(ticker, gathered["fetches"])
+        package = _timed("Analyst", lambda: self.analyst.score(ticker, gathered["fetches"]))
         # Pass 2: if MEDIUM+, fetch Glint concurrently and re-score.
         # Save pass-1 score for observability — operator can see if enrichment moved the needle.
         _MEDIUM_PLUS = {"MEDIUM", "HIGH", "CRITICAL_REVIEW"}
         pre_enrichment_score = package.get("watch_score")
         if package.get("review_priority") in _MEDIUM_PLUS:
-            self.scout.enrich(ticker, gathered["fetches"])
-            package = self.analyst.score(ticker, gathered["fetches"])
+            _timed("Scout", lambda: self.scout.enrich(ticker, gathered["fetches"]))
+            package = _timed("Analyst", lambda: self.analyst.score(ticker, gathered["fetches"]))
             package["pre_enrichment_watch_score"] = pre_enrichment_score
             package["enrichment_delta"] = round(
                 (package.get("watch_score", 0) - (pre_enrichment_score or 0)), 2)
         package["source_health"] = gathered["source_health"]
-        package = self.adversary.review(package)
-        package = self.explainer.explain(package)
-        summary = self.packager.write(package)
+        package = _timed("Adversary", lambda: self.adversary.review(package))
+        package = _timed("Explainer", lambda: self.explainer.explain(package))
+        summary = _timed("Packager", lambda: self.packager.write(package))
         summary["source_health"] = gathered["source_health"]
         summary["explanation_source"] = (package.get("review_explanation") or {}).get("source")
+        summary["stage_ms"] = stage_ms
         return summary

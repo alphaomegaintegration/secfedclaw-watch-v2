@@ -116,6 +116,10 @@ def run_scan(universe: list[str], *, prefer_live: bool, out_dir: Path | str | No
                 "fetches": {k: v.get("mode") for k, v in sh.items()},
                 # which provider served each live web/social fetch (#19 observability)
                 "providers": {k: v["provider"] for k, v in sh.items() if v.get("provider")},
+                # per-agent stage latency for the SRE dashboard (manifest only —
+                # popped from the summary below so review_queue.json stays
+                # deterministic; timing varies run-to-run).
+                "stage_ms": summary.pop("stage_ms", {}),
             }
         except Exception as e:  # never let one ticker abort the scan
             summary = {"ticker": ticker, "error": f"{type(e).__name__}: {e}",
