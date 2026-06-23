@@ -34,6 +34,8 @@ DEFAULT_PRICING: dict[str, tuple[float, float]] = {
     "o3": (10.0, 40.0),
     "gemini-1.5-pro": (1.25, 5.0),
     "gemini-1.5-flash": (0.075, 0.30),
+    "gemini-2.5-flash": (0.30, 2.50),
+    "gemini-2.0-flash": (0.10, 0.40),
     "gemini": (1.25, 5.0),
     # Local models run on the operator's machine (Ollama) — genuinely $0. Listed
     # so they price as known-free instead of "unknown pricing".

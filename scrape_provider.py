@@ -36,11 +36,16 @@ from typing import Any
 
 OPENROUTER_BASE = "https://openrouter.ai/api/v1"
 DEFAULT_OLLAMA_BASE = "http://localhost:11434"
-# Default LLM is LOCAL Ollama: free, offline, no API key, no credit wall. Set
-# SGAI_MODEL to an "openai/..." model to use OpenRouter (paid) instead.
-DEFAULT_MODEL = "ollama/gemma4:latest"
+# Default search LLM is Gemini Flash: fast + concurrent cloud inference (~0.6s/
+# call vs minutes on a local model, and no single-instance serialization across
+# parallel scan workers). Set SGAI_MODEL to "ollama/<model>" for a free local
+# fallback, or "openai/<model>" for OpenRouter.
+DEFAULT_MODEL = "gemini-2.5-flash"
+DEFAULT_GEMINI_CTX = 1_000_000  # gemini flash context; high → scrapegraphai won't over-chunk
 DEFAULT_MAX_TOKENS = 2048
 DEFAULT_MAX_BROWSERS = 2
+DEFAULT_SEARCH_RESULTS = 3       # pages SearchGraph renders per search (was 5)
+DEFAULT_MAX_SEARCHES = 3         # max concurrent SearchGraph pipelines
 DEFAULT_ORDER = ("scrapegraphai", "firecrawl")
 _MIN_CONTENT = 50  # markdown shorter than this is treated as "no real content"
 # Wait for the network to settle before reading page.content(), so heavy/JS
@@ -63,11 +68,53 @@ def _browser_semaphore(max_browsers: int) -> threading.Semaphore:
         return _browser_sem
 
 
+# Module-global cap on concurrent SearchGraph pipelines (each spawns browsers +
+# LLM calls). Separate from the browser cap so a wide --workers run doesn't fan
+# out many full search pipelines at once.
+_search_sem: threading.Semaphore | None = None
+_search_sem_lock = threading.Lock()
+
+
+def _search_semaphore(max_searches: int) -> threading.Semaphore:
+    global _search_sem
+    with _search_sem_lock:
+        if _search_sem is None:
+            _search_sem = threading.Semaphore(max(1, max_searches))
+        return _search_sem
+
+
 def _scrapegraphai_installed() -> bool:
     try:
         return importlib.util.find_spec("scrapegraphai") is not None
     except Exception:
         return False
+
+
+_noise_quieted = False
+_noise_lock = threading.Lock()
+
+
+def _quiet_sgai_noise() -> None:
+    """Quiet scrapegraphai/langchain log noise once, process-wide (idempotent):
+    the per-attempt ChromiumLoader retry notices ('Attempt N failed…') and
+    langchain's benign 'Unexpected argument model_tokens' (scrapegraphai
+    forwards its chunking key to the Gemini client, which ignores it). Set once
+    and left — NOT a per-call context manager, which would race across the
+    scan's parallel workers (one thread restoring the level mid-run in another).
+    ERROR-level messages still surface."""
+    global _noise_quieted
+    if _noise_quieted:
+        return
+    with _noise_lock:
+        if _noise_quieted:
+            return
+        import logging
+        import warnings
+        for n in ("scrapegraphai", "langchain", "langchain_google_genai",
+                  "langchain_core", "httpx", "google_genai"):
+            logging.getLogger(n).setLevel(logging.ERROR)
+        warnings.filterwarnings("ignore", message=r".*Unexpected argument.*")
+        _noise_quieted = True
 
 
 # Substrings identifying the already-handled scrape race (page still navigating
@@ -125,6 +172,8 @@ class ScrapeProvider:
         self.model = self.env.get("SGAI_MODEL") or DEFAULT_MODEL
         self.max_browsers = int(self.env.get("SGAI_MAX_BROWSERS") or max_browsers
                                 or DEFAULT_MAX_BROWSERS)
+        self.search_results = int(self.env.get("SGAI_SEARCH_RESULTS") or DEFAULT_SEARCH_RESULTS)
+        self.max_searches = int(self.env.get("SGAI_MAX_SEARCHES") or DEFAULT_MAX_SEARCHES)
         order_str = self.env.get("SCRAPE_PROVIDER_ORDER")
         self.order = (tuple(o.strip() for o in order_str.split(",") if o.strip())
                       if order_str else (order or DEFAULT_ORDER))
@@ -150,15 +199,36 @@ class ScrapeProvider:
     def _is_local_llm(self) -> bool:
         return self.model.startswith("ollama/")
 
+    def _is_gemini(self) -> bool:
+        m = self.model.lower()
+        return m.startswith("gemini") or m.startswith("google_genai/") or m.startswith("google/")
+
+    def _required_key(self) -> str | None:
+        """Env var name of the API key this model needs, or None for local."""
+        if self._is_local_llm():
+            return None
+        if self._is_gemini():
+            return "GEMINI_API_KEY"
+        return "OPENROUTER_API_KEY"
+
     def _llm_config(self) -> dict[str, Any]:
-        # Cap tokens: scrapegraphai defaults to 16384, wasteful and overflows
-        # small budgets. Configurable via SGAI_MAX_TOKENS.
+        # Cap output tokens: scrapegraphai defaults to 16384, wasteful and
+        # overflows small budgets. Configurable via SGAI_MAX_TOKENS.
         max_tokens = int(self.env.get("SGAI_MAX_TOKENS") or DEFAULT_MAX_TOKENS)
         if self._is_local_llm():
             # Local Ollama: no API key, no external call, no credit wall.
             llm = {"model": self.model,
                    "base_url": self.env.get("OLLAMA_BASE_URL") or DEFAULT_OLLAMA_BASE,
                    "model_tokens": max_tokens}
+        elif self._is_gemini():
+            # Gemini via langchain_google_genai. scrapegraphai expects the
+            # "google_genai/<model>" provider prefix; model_tokens (context)
+            # silences its chunking warning and avoids over-chunking.
+            bare = self.model.split("/")[-1]
+            llm = {"model": f"google_genai/{bare}",
+                   "api_key": self.env.get("GEMINI_API_KEY", ""),
+                   "model_tokens": DEFAULT_GEMINI_CTX,
+                   "max_tokens": max_tokens}
         else:
             # OpenRouter (or any OpenAI-compatible endpoint).
             llm = {"model": self.model,
@@ -189,6 +259,7 @@ class ScrapeProvider:
         if not _scrapegraphai_installed():
             return None
         _install_asyncio_noise_filter()
+        _quiet_sgai_noise()
         sem = _browser_semaphore(self.max_browsers)
         sem.acquire()
         try:
@@ -213,10 +284,12 @@ class ScrapeProvider:
     def _sgai_search(self, query: str, prompt: str | None = None) -> ScrapeResult | None:
         if not _scrapegraphai_installed():
             return None
-        # Hosted models need an API key; local Ollama does not.
-        if not self._is_local_llm() and not self.env.get("OPENROUTER_API_KEY"):
+        # Hosted models need their API key (Gemini → GEMINI_API_KEY, else
+        # OpenRouter); local Ollama needs none. Missing key → skip to fallback.
+        key_env = self._required_key()
+        if key_env and not self.env.get(key_env):
             return None
-        sem = _browser_semaphore(self.max_browsers)
+        sem = _search_semaphore(self.max_searches)
         sem.acquire()
         try:
             from scrapegraphai.graphs import SearchGraph
@@ -225,13 +298,15 @@ class ScrapeProvider:
                 "X/Twitter, Reddit, StockTwits and stock forums from the past week. "
                 "Return a JSON list named 'posts'; each item has: text, platform, "
                 "author, url.")
-            graph = SearchGraph(prompt=ask, config={**self._llm_config(), "max_results": 5})
+            _quiet_sgai_noise()
+            graph = SearchGraph(prompt=ask,
+                                config={**self._llm_config(), "max_results": self.search_results})
             out = graph.run()
             md = out if isinstance(out, str) else json.dumps(out, default=str)
             if not md or len(md) < 20:
                 return None
             return ScrapeResult(markdown=md, data=out,
-                                source="scrapegraphai:search", provider="scrapegraphai")
+                                source=f"scrapegraphai:search:{self.model}", provider="scrapegraphai")
         except Exception:
             return None
         finally:

@@ -186,7 +186,9 @@ def build(queue: dict[str, Any] | None = None) -> dict[str, Any]:
                 "paid_cost_usd": llm.get("paid_cost_usd", llm.get("total_cost_usd", 0.0)),
                 "paid_calls": llm.get("paid_calls", llm.get("n_calls", 0)),
                 "local_free_calls": llm.get("local_free_calls", 0),
-                "local_search_calls": local_search_calls,
+                "search_calls": local_search_calls,
+                # the model SearchGraph uses (env override or the provider default)
+                "search_model": self_env.get("SGAI_MODEL") or "gemini-2.5-flash",
                 "by_model": llm.get("by_model", {})},
     }
 

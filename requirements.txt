@@ -15,14 +15,16 @@
 # without a Firecrawl plan:
 #
 #   python3 -m venv .venv && . .venv/bin/activate
-#   pip install scrapegraphai
+#   pip install scrapegraphai langchain-google-genai
 #   playwright install chromium
 #
 # Run scan.py / preflight.py with that interpreter. The search() path (X/social)
-# uses an LLM; by default it runs on a LOCAL Ollama model (free, offline, no API
-# key) — install Ollama and `ollama pull gemma4`. To use a hosted LLM instead,
-# set SGAI_MODEL=openai/<model> + OPENROUTER_API_KEY. The scrape() path (page ->
-# markdown) needs no LLM. Tune via SGAI_MODEL / SGAI_MAX_TOKENS / OLLAMA_BASE_URL
-# / SGAI_MAX_BROWSERS / SCRAPE_PROVIDER_ORDER.
+# uses an LLM; by default it runs on Gemini Flash (fast, concurrent, ~cents/scan)
+# — set GEMINI_API_KEY (Google AI Studio). For a free local fallback set
+# SGAI_MODEL=ollama/<model> (no key, install Ollama); or SGAI_MODEL=openai/<model>
+# + OPENROUTER_API_KEY. The scrape() path (page -> markdown) needs no LLM. Tune
+# via SGAI_MODEL / SGAI_SEARCH_RESULTS / SGAI_MAX_SEARCHES / SGAI_MAX_TOKENS /
+# SGAI_MAX_BROWSERS / OLLAMA_BASE_URL / SCRAPE_PROVIDER_ORDER.
 #
 # scrapegraphai
+# langchain-google-genai   # only when SGAI_MODEL is a Gemini model
