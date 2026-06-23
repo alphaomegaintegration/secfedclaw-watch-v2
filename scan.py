@@ -107,12 +107,15 @@ def run_scan(universe: list[str], *, prefer_live: bool, out_dir: Path | str | No
         t0 = time.monotonic()
         try:
             summary = orch.run(ticker)
+            sh = summary.get("source_health") or {}
             entry = {
                 "status": "done",
                 "priority": summary.get("review_priority"),
                 "watch_score": summary.get("watch_score"),
                 "ms": round((time.monotonic() - t0) * 1000),
-                "fetches": {k: v.get("mode") for k, v in (summary.get("source_health") or {}).items()},
+                "fetches": {k: v.get("mode") for k, v in sh.items()},
+                # which provider served each live web/social fetch (#19 observability)
+                "providers": {k: v["provider"] for k, v in sh.items() if v.get("provider")},
             }
         except Exception as e:  # never let one ticker abort the scan
             summary = {"ticker": ticker, "error": f"{type(e).__name__}: {e}",
