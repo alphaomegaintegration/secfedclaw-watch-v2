@@ -97,3 +97,19 @@ def test_gemini_flash_priced_paid():
     pin, pout, known = usage.price_for("google_genai/gemini-2.5-flash")
     assert known and (pin, pout) == (0.30, 2.50)   # longest-match beats generic 'gemini'
     assert usage.is_free("google_genai/gemini-2.5-flash") is False
+
+
+def test_last_run_prefers_manifest_over_daily_summary(monkeypatch):
+    # "Last run" must reflect the latest scan (run_manifest, written by every
+    # scan incl. server reruns), not only daily.py's older summary.
+    fake = {
+        "review_queue.json": {"review_queue": [], "data_mode": "live"},
+        "daily_run_summary.json": {"finished_utc": "2026-06-23T10:00:00Z",
+                                   "preflight_verdict": "GO_LIVE"},
+        "run_manifest.json": {"finished_utc": "2026-06-23T21:08:33Z",
+                              "started_utc": "2026-06-23T21:04:55Z", "tickers": {}},
+        "model.json": {},
+    }
+    monkeypatch.setattr(agent_status, "_load", lambda p, d: fake.get(p.name, d))
+    st = agent_status.build()
+    assert st["system"]["last_run_utc"] == "2026-06-23T21:08:33Z"  # manifest, not the 10:00 summary
