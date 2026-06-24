@@ -16,6 +16,8 @@ venv/
 .env.*
 *.env
 .hermes_history
+# ...but DO track the placeholder template (no real values)
+!.env.example
 .anthropic_oauth.json
 auth.json
 *secret*

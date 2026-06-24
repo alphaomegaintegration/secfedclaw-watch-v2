@@ -203,9 +203,15 @@ class ScrapeProvider:
         m = self.model.lower()
         return m.startswith("gemini") or m.startswith("google_genai/") or m.startswith("google/")
 
+    def _is_bedrock(self) -> bool:
+        m = self.model.lower()
+        return m.startswith("bedrock/") or m.startswith("bedrock_converse/")
+
     def _required_key(self) -> str | None:
-        """Env var name of the API key this model needs, or None for local."""
-        if self._is_local_llm():
+        """Env var name of the API key this model needs, or None when the model
+        authenticates without one (local Ollama; AWS Bedrock via the standard
+        credential chain — instance role / SSO / env, not a SECFEDCLAW key)."""
+        if self._is_local_llm() or self._is_bedrock():
             return None
         if self._is_gemini():
             return "GEMINI_API_KEY"
@@ -229,6 +235,17 @@ class ScrapeProvider:
                    "api_key": self.env.get("GEMINI_API_KEY", ""),
                    "model_tokens": DEFAULT_GEMINI_CTX,
                    "max_tokens": max_tokens}
+        elif self._is_bedrock():
+            # AWS Bedrock via langchain-aws. No API key: boto3 resolves creds
+            # from the standard chain (instance role on EC2, SSO, or env), so an
+            # AWS-native deploy needs no LLM secret at all. Region comes from
+            # AWS_REGION/AWS_DEFAULT_REGION (or the instance's default).
+            llm = {"model": self.model,   # e.g. bedrock/anthropic.claude-3-5-haiku-20241022-v1:0
+                   "model_tokens": DEFAULT_GEMINI_CTX,
+                   "max_tokens": max_tokens}
+            region = self.env.get("AWS_REGION") or self.env.get("AWS_DEFAULT_REGION")
+            if region:
+                llm["region_name"] = region
         else:
             # OpenRouter (or any OpenAI-compatible endpoint).
             llm = {"model": self.model,

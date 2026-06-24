@@ -1,6 +1,7 @@
 # SECFEDCLAW v0.2 — agentic WATCH-level pump-and-dump review scorer
 
-Finding ceiling: **WATCH** · Mode: review-priority only · Python 3.10+, stdlib-only
+Finding ceiling: **WATCH** · Mode: review-priority only · Python 3.10+ · core is
+stdlib-only (numpy for model/dashboard; scrapegraphai + Playwright for live search)
 
 A connection-aware, multi-ticker securities-surveillance prototype that fuses
 social, market, official (SEC/FINRA/Nasdaq) and microstructure signals into
@@ -16,6 +17,59 @@ It implements the highest-leverage items from the SECFEDCLAW
 continuous-improvement backlog (robust baselines, real coordination graph,
 microstructure scoring, temporal corroboration, multi-ticker scan, backtest,
 dashboard).
+
+---
+
+## 0. Quickstart
+
+### Local install & development
+
+Requires **Python 3.10+** and `git`. The core scan/scoring engine is
+stdlib-only; the model/dashboard need **numpy**, and **live web/social search**
+adds **scrapegraphai + Playwright** (used by Scout). Everything runs offline in
+**replay** mode with zero credentials.
+
+```bash
+git clone <your-fork-url> secfedclaw-watch-v2 && cd secfedclaw-watch-v2
+python3 -m venv .venv && . .venv/bin/activate     # Windows: .venv\Scripts\activate
+pip install -r requirements-dev.txt               # numpy + dev tooling
+
+# 1) Run fully offline (no keys) — replays cached custody artifacts:
+python3 scan.py --no-live --tickers AAPL TSLA AMC GME
+python3 dashboard_v2.py                             # -> out/dashboard_v2.html
+python3 serve.py                                    # view at http://127.0.0.1:8787/
+
+# 2) Develop & test:
+python3 -m pytest -q -m "not slow"                  # fast suite (~1–2 min)
+python3 -m pytest -q                                # full suite incl. slow live-flow
+
+# 3) Enable live web/social search (Scout) — adds the scraper stack:
+pip install scrapegraphai langchain-google-genai    # Gemini search path
+python3 -m playwright install chromium
+
+# 4) Go live (needs a .env — see §14 for the full key list):
+cp .env.example .env   # then fill in POLYGON_API_KEY, SEC_USER_AGENT, GEMINI_API_KEY, …
+python3 preflight.py                                # per-source live readiness
+python3 scan.py --live --discover 25                # defaults + top-25 live movers
+```
+
+**The dashboard is the product surface.** `serve.py` binds to **127.0.0.1
+only** and is token-gated off-localhost; it serves the offline HTML plus a
+control plane (`POST /api/rerun`, `/api/label`, `/api/retrain`) so an analyst
+can re-scan, label package outcomes, and retrain the advisory model **in-app**.
+
+**Search LLM (Scout's web/social search):** defaults to **Gemini**
+(`gemini-2.5-flash`, set `GEMINI_API_KEY`) via scrapegraphai, falling back to
+**Firecrawl** (`FIRECRAWL_API_KEY`). Swappable to **local Ollama** (free, no
+key) or **AWS Bedrock** (no key — instance role) by setting `SGAI_MODEL` — see
+§14.
+
+### Run it the way you'll demo it
+
+The default universe is 7 mega-caps, which (correctly) score LOW — they aren't
+pump targets. For a realistic run that surfaces coordination flags, use
+`--discover` to pull live movers (thin/micro-caps): `python3 scan.py --live
+--discover 25`. See `docs/SEC_PRESENTATION.md` for a full demo walkthrough.
 
 ---
 
@@ -35,10 +89,8 @@ agents flagged — and that this prototype addresses:
 | 7 | **Single ticker** (AAPL), hard-coded `/home/ubuntu` paths | README, code | Multi-ticker scan + discovery; path-portable root |
 | 8 | Only **8/141** timelines scored | business review §4 Gap A | Scan scores the whole universe in one run |
 
-**Also found (operational, outside this prototype):**
-- 🔴 **Rotate keys:** `hermes/.hermes_history` contains pasted plaintext API keys
-  (an Anthropic key + one other). Rotate them and scrub the file.
-- 🟡 README credential status is stale — SEC EDGAR now works (`SEC_USER_AGENT` is set).
+All secrets live only in a gitignored `.env` (or AWS Secrets Manager / a Bedrock
+instance role — see §0 and §14); no credentials are committed to the repo.
 
 ## 2. Data sources — live status
 
@@ -60,15 +112,19 @@ are completely keyless per [sec.gov EDGAR APIs](https://www.sec.gov/search-filin
 
 **Social (8 platforms):**
 
+All web/social scraping + search routes through **ScrapeGraphAI (primary,
+LLM-driven)** → **Firecrawl (fallback)** → **cached replay**. The search LLM
+defaults to Gemini (`GEMINI_API_KEY`); see §14 for Ollama/OpenRouter/Bedrock.
+
 | Platform | Auth | Status | SEC case reference |
 |---|---|---|---|
-| X (Twitter) | `X_BEARER_TOKEN` | ✅ live | Atlas Trading, Citron Research |
+| X (Twitter) | ScrapeGraphAI search (+ optional `X_BEARER_TOKEN`) | ✅ live | Atlas Trading, Citron Research |
 | StockTwits | None (public) | ✅ live | OST, general pump chatter |
 | Reddit | None / `REDDIT_CLIENT_ID` | ✅ live (IP-dependent) | Atlas Trading (r/wallstreetbets) |
-| Social web search | `FIRECRAWL_API_KEY` | ✅ live | Cross-platform promotion via Google |
+| Social web search | ScrapeGraphAI → `FIRECRAWL_API_KEY` | ✅ live | Cross-platform promotion via Google |
 | Discord | `DISCORD_BOT_TOKEN` + `DISCORD_GUILD_IDS` | ⚠ needs bot | Atlas Trading ($114M Discord chatroom) |
-| Instagram | `FIRECRAWL_API_KEY` | ⚠ needs login session | OST/CLEU deepfake AI video ads |
-| Facebook | `FIRECRAWL_API_KEY` | ⚠ needs login session | CLEU/OST ad targeting → WhatsApp |
+| Instagram | ScrapeGraphAI → Firecrawl | ⚠ needs login session | OST/CLEU deepfake AI video ads |
+| Facebook | ScrapeGraphAI → Firecrawl | ⚠ needs login session | CLEU/OST ad targeting → WhatsApp |
 | Telegram / WhatsApp | Authorized import + opt-in | 🔒 off by default | CLEU/OST WhatsApp groups (§12) |
 
 **Setup for new social connectors:**
@@ -138,7 +194,7 @@ Orchestrator   → runs the loop per ticker; scan.py runs it across the universe
 
 ```bash
 cd secfedclaw-watch-v2
-python3 tests/test_v2.py                      # 14 tests, all pass
+python3 -m pytest -q -m "not slow"             # ~230 tests across 29 suites
 python3 pipeline.py                            # scan -> backtest -> dashboard (one command)
 
 # or individually:
@@ -193,9 +249,10 @@ should — which lifted precision from 0.65 to 0.71 with no recall loss.
 
 Self-contained offline HTML (inline CSS/JS, **no auto-loaded external resources
 or callbacks**) → `out/dashboard_v2.html`, built on a small consistent design
-system (color/space/type tokens, accessible contrast). Eleven tabs (Overview,
-Packages, Network, How it works, Agents, Learning, Status, LLM cost,
-Methodology, SEC case studies, Backtest):
+system (color/space/type tokens, accessible contrast). Twelve tabs, grouped into
+three nav sections — **Review** (Overview, Packages, Network, Agents, Backtest),
+**Operations** (Status, Runs, Learning, LLM cost), and **Reference** (How it
+works, Methodology, SEC case studies):
 
 - **Overview** — operator KPI cards (universe, **score-ready %**, flagged
   ≥MEDIUM, CRITICAL/HIGH, mean anomaly-evidence, mode) + the ranked, filterable
@@ -203,9 +260,15 @@ Methodology, SEC case studies, Backtest):
   **reference links** (SEC EDGAR, EDGAR full-text, market, StockTwits) that open
   externally on click.
 - **Packages** — evidence cards with component bars, families, caps,
-  coordination clusters, the model advisory, and a non-accusatory rationale.
-- **Network** — interactive coordination network graph: nodes are tickers, edges
-  are weighted by coordination score; colored by priority band, draggable layout.
+  coordination clusters, the model advisory, and a non-accusatory rationale. Each
+  card **drills down** (review questions, coordination evidence, market-anomaly
+  basis, limitations & gaps, custody/SHA-256, WATCH boundary) and an analyst can
+  **label the outcome in-app** (useful watch / false positive / benign), feeding
+  the calibration ledger.
+- **Network** — interactive coordination network graph: nodes are tickers,
+  platforms, near-duplicate clusters, shared domains, and corroborating families;
+  sized by score, colored by priority band. **Hover any node** to inspect it
+  (type, score, coordination) and highlight its connections; drag to rearrange.
 - **How it works** — interactive workflow diagram of the full pipeline
   (Scout→Analyst→Adversary→Explainer→Packager), clickable to expand each stage.
 - **Agents** — the five-agent **orchestration** (Scout→Analyst→Adversary→
@@ -214,11 +277,15 @@ Methodology, SEC case studies, Backtest):
 - **Learning** — the autonomous feedback cycle (Scan→Review→Learn→Advise),
   model KPIs (labels, AUC, training data), feature-importance bars, operator
   label breakdown, and design constraints (abstention, anti-leakage, rules-primary).
-- **Status** — operational view *from an agent perspective*: each agent's live
-  state, the integrations it depends on, and per-connection live/replay/ok
-  health, plus system KPIs (preflight verdict, model, LLM spend, last run).
-- **LLM cost** — usage & cost ledger (total cost, by model, by component); empty
-  until an LLM-backed component records spend via `usage.record(...)`.
+- **Status** — SRE / observability view: per-integration health + success rate,
+  per-agent latency (p50/max) and run/error counts, SLOs, and system KPIs
+  (preflight verdict, integrations live, model, **LLM paid cost**, search model,
+  last run). Surfaces which sources are live vs degraded at a glance.
+- **Runs** — live status of dashboard-triggered scans (re-run from the UI via the
+  token-gated control plane), polling the run manifest for progress.
+- **LLM cost** — usage & cost ledger (total cost, by model, by component).
+  Scout's web/social **search** spend (Gemini via scrapegraphai) records here
+  automatically per scan; the opt-in explainer/social-intel LLM calls add to it.
 - **Methodology** — review-priority bands + a full **data dictionary** of every
   metric, and an explicit "what it does NOT do".
 - **SEC case studies** — public SEC matters mapped to *which thresholds fire and
@@ -442,9 +509,6 @@ python3 daily.py                       # run once now (live if reachable)
 # Linux: edit paths in deploy/secfedclaw.cron, then: crontab deploy/secfedclaw.cron
 ```
 
-This is independent of the legacy 30-minute hermes collector cron — it does not
-modify or replace it.
-
 ### Daily digest (`notify.py`)
 
 After each daily run, a concise WATCH digest of the flagged (≥MEDIUM) tickers is
@@ -540,6 +604,62 @@ a token off-localhost); still keep `8787` closed in the security group and only
 reachable through the proxy. Persisted artifacts live under `out/` (gitignored) —
 snapshot the instance or sync `out/` to S3 if you need custody backups.
 
+### LLM via AWS Bedrock (no API keys, instance-role auth)
+
+SECFEDCLAW has two LLM seams — **Scout's web/social search** (runs every live
+scan) and the **opt-in Explainer** (5th agent). Both can run on **Amazon
+Bedrock** with **no LLM API key at all**: boto3 resolves credentials from the
+standard AWS chain (the EC2 **instance role**, SSO, or env). This is the
+preferred path for an AWS-native or **GovCloud / FedRAMP** deployment — secrets
+never touch disk, and model access is governed by IAM.
+
+**1. Enable model access** in the Bedrock console for the region you deploy in
+(e.g. an Anthropic Claude model). Note the exact model id, e.g.
+`anthropic.claude-3-5-haiku-20241022-v1:0`.
+
+**2. Point the search LLM at Bedrock** — set the model with a `bedrock/` prefix
+(no key needed; just the region):
+
+```bash
+SGAI_MODEL=bedrock/anthropic.claude-3-5-haiku-20241022-v1:0
+AWS_REGION=us-east-1
+pip install scrapegraphai langchain-aws        # langchain-aws backs the Bedrock provider
+python3 -m playwright install chromium
+```
+
+**3. (Optional) Point the Explainer at Bedrock too:**
+
+```bash
+SECFEDCLAW_LLM_EXPLAIN=1
+SECFEDCLAW_LLM_MODEL=bedrock/anthropic.claude-3-5-haiku-20241022-v1:0
+# boto3 is already a dependency; uses the converse API + the same credential chain
+```
+
+The provider chain tries Bedrock first for any `bedrock/*` model, then falls
+back to OpenRouter/Anthropic (if those keys exist), then the deterministic
+template — so a missing Bedrock entitlement degrades safely, never crashes a
+scan. Every Bedrock call is **cost-tracked in `usage.py`** (tokens from the
+converse API), so the LLM-cost tab populates exactly as it does for Gemini; add
+Bedrock per-model prices to `out/usage/pricing.json` to attribute dollars.
+
+**4. IAM — least privilege.** Grant the instance role only Bedrock invoke on the
+specific model(s):
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Effect": "Allow",
+    "Action": ["bedrock:InvokeModel"],
+    "Resource": "arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-3-5-haiku-20241022-v1:0"
+  }]
+}
+```
+
+No `GEMINI_API_KEY` / `OPENROUTER_API_KEY` / `ANTHROPIC_API_KEY` is needed when
+Bedrock is the LLM for both seams — the only remaining `.env` secrets are the
+data-source keys (Polygon, etc.), which can themselves live in Secrets Manager.
+
 ## 15. Enforcement history, per-class calibration, agent status & LLM cost
 
 - **Enforcement-history family** (`features/enforcement.py`) — parses the SEC
@@ -609,7 +729,7 @@ secfedclaw_v2/
   explainer.py         LLM-backed review-summary agent (template fallback + guardrails)
   deploy/              launchd plist + cron + schedule_install.sh
   features/            market, social (X/Reddit/StockTwits), coordination, official, temporal, edgar, security_class, enforcement
-  tests/               15 suites, ~75 tests (incl. enforcement, usage, live_flow, explainer)
+  tests/               29 suites, ~230 tests (incl. scrape_provider, serve control, SRE, bedrock)
   out/                 generated packages, review_queue, backtest, dashboard, edgar/
   flatfiles/day_aggs/  cached + hashed historical day-aggregate flat files
 ```
