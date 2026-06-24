@@ -50,7 +50,7 @@ For a paid pilot, core public sources (polygon, sec_edgar, ≥1 social) must run
 
 - **options_flow bar color**: options_flow_score currently reuses the green `.bar-fill` gradient in the component score table. A distinct amber/blue gradient would better convey "this is an options signal, not a direct threat indicator".
 
-- **In-app package labeling** (deferred from design-review 2026-06-24): the human-in-the-loop "Review" stage the Learning panel describes happens only via the `label.py` CLI — there's no labeling UI. Add examiner action buttons on each package (useful_watch / false_positive / benign_explained + a note) that POST to a new `serve.py` `/api/label` endpoint (mirror `/api/rerun`), writing the ledger. Closes the CLI-only feedback loop. Needs a backend endpoint + tests + its own review.
+- ~~**In-app package labeling**~~ — **Done 2026-06-24**: examiner label buttons (useful_watch / false_positive / benign_explained) on each package card POST to a new `serve.py` `/api/label` endpoint (token-gated, path-traversal-guarded, application/json only) that calls `ledger.add_label`. Closes the CLI-only feedback loop in-app; degrades to a hint on `file://`. See Completed.
 
 ### P3
 
@@ -105,6 +105,7 @@ Recent work that is done and shipped:
 - **USWDS/design-system refactor**: consistent color/space/type tokens, accessible contrast, clear section intros throughout the dashboard.
 - **Sidebar navigation**: persistent sidebar nav added to the dashboard for quick tab access.
 - **Sidebar IA — 3 sections** (design-review 2026-06-24, FINDING-001): the flat 12-tab list was grouped into **Review** (Overview/Packages/Agents/Network/Backtest — examiner output), **Operations** (Status/Runs/Learning/LLM cost), and **Reference** (How it works/Methodology/SEC case studies). Examiner-facing output is now first; section labels hide in collapsed-rail mode. Fixes the failed trunk test ("what are the major sections?").
+- **In-app package labeling** (2026-06-24): each package card now has examiner action buttons (Useful watch / False positive / Benign) that POST to a new `serve.py` `/api/label` endpoint → `ledger.add_label`. The endpoint is token-gated, application/json-only (CSRF-safe like `/api/rerun`), and path-traversal-guarded (bare `*_watch_v2.json` child of `out/`). The human-in-the-loop "Review" stage is now in-app, not CLI-only; degrades to a "needs serve.py" hint on `file://`. 6 endpoint tests.
 - **Packages examiner drill-down** (design-review 2026-06-24, FINDING-002): package cards are now collapsible `<details>` (flagged ≥MEDIUM open, LOW collapsed) with expandable evidence the examiner can open — review questions (the checklist), coordination evidence (clusters/domains/post-ids), market anomaly basis (z-scores), limitations & gaps, the custody trail (every raw artifact + SHA256), and the WATCH boundary. All static from data already in the package JSON. Turns "just an output" into something an examiner can interrogate.
 - **"How it works" interactive workflow tab (tab 11)**: added Scout→Analyst→Adversary→Explainer→Packager visual workflow. (commit 793cfa3)
 - **Coordination network graph (tab 10)**: D3-based network visualization with colored edges and drag interaction; index-based edge lookup fixed. (commits 49a5ff2, 8a68c9b)
