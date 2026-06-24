@@ -268,3 +268,54 @@ class TestLabelEndpoint(unittest.TestCase):
         with self.assertRaises(urllib.error.HTTPError) as cm:
             _post(port, "/api/label", {"package": "X_watch_v2.json", "label": "useful_watch"})
         self.assertEqual(cm.exception.code, 401)
+
+
+class TestRetrainEndpoint(unittest.TestCase):
+    """POST /api/retrain — retrain the model on current labels (loop completion)."""
+    def setUp(self):
+        self._td = __import__("tempfile").TemporaryDirectory()
+        self.out = Path(self._td.name)
+        self.srv = None
+        self._orig = serve._retrain_model
+
+    def tearDown(self):
+        serve._retrain_model = self._orig
+        if self.srv:
+            self.srv.shutdown(); self.srv.server_close()
+        self._td.cleanup()
+
+    def _serve(self, token=None):
+        self.srv, port, _ = _start(self.out, token=token)
+        return port
+
+    def test_retrain_returns_status(self):
+        serve._retrain_model = lambda out_dir: {"retrained": True, "abstain": False,
+                                                "cv_auc": 0.91, "n_total": 207, "n_real_labels": 27}
+        port = self._serve()
+        r = _post(port, "/api/retrain", {})
+        self.assertEqual(r.status, 200)
+        j = json.loads(r.read())
+        self.assertTrue(j["retrained"]); self.assertFalse(j["abstain"])
+        self.assertEqual(j["cv_auc"], 0.91); self.assertEqual(j["n_real_labels"], 27)
+
+    def test_retrain_abstain_status(self):
+        serve._retrain_model = lambda out_dir: {"retrained": True, "abstain": True,
+                                                "reason": "need >= 40 labels"}
+        port = self._serve()
+        j = json.loads(_post(port, "/api/retrain", {}).read())
+        self.assertTrue(j["abstain"]); self.assertIn("40", j["reason"])
+
+    def test_retrain_runner_error_is_500(self):
+        def boom(out_dir): raise RuntimeError("training blew up")
+        serve._retrain_model = boom
+        port = self._serve()
+        with self.assertRaises(urllib.error.HTTPError) as cm:
+            _post(port, "/api/retrain", {})
+        self.assertEqual(cm.exception.code, 500)
+
+    def test_retrain_token_gated(self):
+        serve._retrain_model = lambda out_dir: {"retrained": True, "abstain": True, "reason": "x"}
+        port = self._serve(token="sekret")
+        with self.assertRaises(urllib.error.HTTPError) as cm:
+            _post(port, "/api/retrain", {})
+        self.assertEqual(cm.exception.code, 401)
