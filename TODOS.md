@@ -4,6 +4,30 @@ Priority scale: **P0** = blocking correctness / security · **P1** = high-value 
 
 ---
 
+## Go-to-market / strategy
+
+### P1 — Office hours 2026-06-24 (APPROVED design)
+
+Design doc: `~/.gstack/projects/secfedclaw-watch-v2/robertbrown-main-design-20260624-072548.md`
+(supersedes the 2026-06-09 SEC-analyst RAG design; survived adversarial review 8/10).
+
+**Decision:** wedge pivots from SEC enforcement (slow: user≠buyer, 12-24mo ATO/procurement)
+to a **private compliance desk** (broker-dealer / exchange / venue) — same tech, real
+budget line, weeks-not-years procurement. WATCH-only kept as deliberate, audit-friendly
+positioning. SEC LOI stays warm as credibility, not the roadmap driver.
+
+Assignment (NOT a code task — do this before building anything new):
+- [ ] List 5-8 named private compliance desks; for the top one, name the human who owns market-abuse monitoring (use the SEC relationship as a warm intro).
+- [ ] Within 2 weeks: one real conversation. Validate the two open assumptions — does WATCH-only output satisfy them? is procurement really weeks-not-years? — and propose a paid pilot at **$2-10k/mo** with a written success metric.
+- [ ] ~Week 6: a signed PAID pilot (money, not LOI).
+- [ ] One email: pin whether the SEC LOI is a 2026 or 2028 deal.
+
+Build item (deferred until a desk commits): per-tenant boundary — the dashboard is
+single-tenant today; needs auth + per-tenant ticker-universe/data separation (~1-2 wks).
+For a paid pilot, core public sources (polygon, sec_edgar, ≥1 social) must run live, not replay.
+
+---
+
 ## Data Sources
 
 ### P0 — Security / Correctness
