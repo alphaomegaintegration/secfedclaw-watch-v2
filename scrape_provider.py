@@ -302,6 +302,10 @@ class ScrapeProvider:
             graph = SearchGraph(prompt=ask,
                                 config={**self._llm_config(), "max_results": self.search_results})
             out = graph.run()
+            # The LLM spend was incurred by run() regardless of output quality —
+            # record it before any early return so the dashboard's LLM-cost panel
+            # reflects Scout's real search cost.
+            self._record_search_usage(graph)
             md = out if isinstance(out, str) else json.dumps(out, default=str)
             if not md or len(md) < 20:
                 return None
@@ -311,6 +315,37 @@ class ScrapeProvider:
             return None
         finally:
             sem.release()
+
+    def _record_search_usage(self, graph) -> None:
+        """Record a SearchGraph's LLM token spend to the usage ledger so the
+        dashboard's LLM-cost panel reflects Scout's real search cost.
+
+        scrapegraphai surfaces per-run token counts via get_execution_info()'s
+        'TOTAL RESULT' row; it reports total_cost_USD=0 for Gemini because it has
+        no price table, so usage.py computes the dollar cost from its own pricing.
+        Local models record as free (priced 0). Best-effort: bookkeeping must
+        never break a scan."""
+        try:
+            import usage
+            info = graph.get_execution_info() or []
+            tot = next((r for r in info if isinstance(r, dict)
+                        and r.get("node_name") == "TOTAL RESULT"), None)
+            if not tot:
+                return
+            pt = int(tot.get("prompt_tokens") or 0)
+            ct = int(tot.get("completion_tokens") or 0)
+            if pt == 0 and ct == 0:
+                return
+            # Normalize a bare local model to the ollama/ prefix so usage.is_free
+            # classifies it correctly; Gemini/OpenRouter models record as-is.
+            model = self.model
+            if self._is_local_llm() and "/" not in model:
+                model = f"ollama/{model}"
+            usage.record(model, pt, ct, component="search",
+                         meta={"provider": "scrapegraphai",
+                               "requests": tot.get("successful_requests")})
+        except Exception:
+            pass
 
     # ---- firecrawl (fallback) -------------------------------------------
     def _firecrawl_scrape(self, url: str) -> ScrapeResult | None:

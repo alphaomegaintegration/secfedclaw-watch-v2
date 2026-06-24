@@ -22,7 +22,7 @@ from scrape_provider import ScrapeProvider, ScrapeResult, coerce_search_to_posts
 # ---- fake-module helpers --------------------------------------------------
 
 @contextlib.contextmanager
-def fake_sgai(html=None, search_out=None):
+def fake_sgai(html=None, search_out=None, exec_info=None):
     """Inject fake scrapegraphai docloaders/graphs + html2text into sys.modules."""
     saved = {k: sys.modules.get(k) for k in
              ("scrapegraphai", "scrapegraphai.docloaders", "scrapegraphai.graphs", "html2text")}
@@ -37,6 +37,7 @@ def fake_sgai(html=None, search_out=None):
     class FakeSearchGraph:
         def __init__(self, prompt=None, config=None, schema=None): pass
         def run(self): return search_out
+        def get_execution_info(self): return exec_info
 
     class FakeHTML2Text:
         def __init__(self): self.ignore_links = True; self.body_width = 79
@@ -180,6 +181,54 @@ def test_search_local_ollama_needs_no_key(monkeypatch):
         prov = ScrapeProvider(env={"SGAI_MODEL": "ollama/gemma3:1b"})  # local, no key
         res = prov.search("$AMC")
     assert res is not None and res.provider == "scrapegraphai"
+
+def test_search_records_gemini_usage(monkeypatch, tmp_path):
+    """A successful Gemini search must record its real token spend to the usage
+    ledger — otherwise the dashboard LLM-cost panel stays empty (the reported
+    bug). Token counts come from scrapegraphai's 'TOTAL RESULT' exec-info row;
+    usage.py supplies the price (scrapegraphai reports total_cost_USD=0)."""
+    import usage
+    led = tmp_path / "llm_usage.jsonl"
+    monkeypatch.setattr(usage, "LEDGER", led)
+    monkeypatch.setattr(sp, "_scrapegraphai_installed", lambda: True)
+    info = [{"node_name": "GraphIterator", "total_tokens": 36069},
+            {"node_name": "TOTAL RESULT", "prompt_tokens": 32500,
+             "completion_tokens": 7122, "successful_requests": 4, "total_cost_USD": 0.0}]
+    with fake_sgai(search_out={"posts": [{"text": "x", "platform": "x"}]}, exec_info=info):
+        res = ScrapeProvider(env={"GEMINI_API_KEY": "k"}).search("$AMC")
+    assert res is not None
+    s = usage.summary(path=led)
+    assert s["n_calls"] == 1
+    assert s["total_input_tokens"] == 32500 and s["total_output_tokens"] == 7122
+    assert s["paid_calls"] == 1 and s["paid_cost_usd"] > 0          # gemini is paid
+    assert s["by_component"].get("search", {}).get("calls") == 1
+
+
+def test_search_records_local_as_free(monkeypatch, tmp_path):
+    """Local Ollama search records tokens but prices as free (zero paid cost)."""
+    import usage
+    led = tmp_path / "llm_usage.jsonl"
+    monkeypatch.setattr(usage, "LEDGER", led)
+    monkeypatch.setattr(sp, "_scrapegraphai_installed", lambda: True)
+    info = [{"node_name": "TOTAL RESULT", "prompt_tokens": 100, "completion_tokens": 50}]
+    with fake_sgai(search_out={"posts": [{"text": "y"}]}, exec_info=info):
+        ScrapeProvider(env={"SGAI_MODEL": "ollama/gemma3:1b"}).search("$AMC")
+    s = usage.summary(path=led)
+    assert s["n_calls"] == 1 and s["local_free_calls"] == 1 and s["paid_cost_usd"] == 0
+
+
+def test_search_without_exec_info_records_nothing(monkeypatch, tmp_path):
+    """No exec-info (older scrapegraphai, or a failure) -> no ledger row, no
+    crash; the search itself still returns its result."""
+    import usage
+    led = tmp_path / "llm_usage.jsonl"
+    monkeypatch.setattr(usage, "LEDGER", led)
+    monkeypatch.setattr(sp, "_scrapegraphai_installed", lambda: True)
+    with fake_sgai(search_out={"posts": [{"text": "z", "platform": "x"}]}, exec_info=None):
+        res = ScrapeProvider(env={"GEMINI_API_KEY": "k"}).search("$AMC")
+    assert res is not None
+    assert usage.summary(path=led)["n_calls"] == 0
+
 
 def test_llm_config_gemini_default():
     g = ScrapeProvider(env={"GEMINI_API_KEY": "gk"})._llm_config()["llm"]  # default gemini
