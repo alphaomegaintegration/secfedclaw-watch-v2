@@ -145,6 +145,34 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def version_string(self) -> str:
+        # Don't disclose the Python/server version in the Server header.
+        return "SECFEDCLAW"
+
+    def end_headers(self):
+        # Defense-in-depth headers on EVERY response (static + control plane).
+        # The dashboard is fully self-contained (inline CSS/JS, no external
+        # resources), so a strict CSP doesn't break it; 'unsafe-inline' is
+        # required only because the markup uses inline <style>/<script>.
+        # no-referrer stops the ?token= URL leaking via Referer when a user
+        # clicks an outbound ticker link.
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("X-Frame-Options", "DENY")
+        self.send_header("Referrer-Policy", "no-referrer")
+        self.send_header("Content-Security-Policy",
+                         "default-src 'none'; script-src 'unsafe-inline'; "
+                         "style-src 'unsafe-inline'; img-src 'self' data:; "
+                         "connect-src 'self'; base-uri 'none'; form-action 'none'; "
+                         "frame-ancestors 'none'")
+        super().end_headers()
+
+    def list_directory(self, path):
+        # No autoindex: a directory request must not enumerate out/ (package
+        # filenames, custody timestamps, the ledger path). 404, not 403, so it
+        # doesn't even confirm the directory exists.
+        self.send_error(404, "Not Found")
+        return None
+
     def do_GET(self):  # noqa: N802
         if not self._authorized():
             return self._send(401, "text/plain", b"401 Unauthorized: missing or invalid token\n")
@@ -291,9 +319,19 @@ def main() -> int:
     ap.add_argument("--port", type=int, default=DEFAULT_PORT)
     ap.add_argument("--token", default=None,
                     help="Shared-secret token required on all requests (?token=… or "
-                         "Authorization: Bearer …). Auto-generated when --host is not localhost.")
+                         "Authorization: Bearer …). Auto-generated if not supplied.")
+    ap.add_argument("--no-token", action="store_true",
+                    help="Disable the access token (NOT recommended — serves the whole "
+                         "out/ corpus unauthenticated, even on localhost).")
     args = ap.parse_args()
+    # Token required BY DEFAULT, even on localhost: serve.py roots at out/, which
+    # holds enforcement-adjacent WATCH packages + the cost ledger. An unauthed
+    # localhost server exposes all of it to any local process. Opt out explicitly
+    # with --no-token.
     token = args.token
+    if not token and not args.no_token:
+        token = secrets.token_urlsafe(16)
+        print(f"Auto-generated access token: {token}  (use the URL below; or pass --no-token to disable)")
     if args.host not in ("127.0.0.1", "localhost"):
         print(f"WARNING: binding to {args.host} exposes WATCH content beyond localhost. "
               "Ensure this is an authorized, trusted network.")

@@ -6,6 +6,7 @@ import tempfile
 import threading
 import unittest
 import urllib.request
+import urllib.error
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -38,6 +39,49 @@ class TestServe(unittest.TestCase):
             finally:
                 srv.shutdown()
                 srv.server_close()
+
+
+class TestServeHardening(unittest.TestCase):
+    """Security headers on every response; no directory autoindex; generic Server."""
+
+    def _serve(self, out):
+        srv = serve.make_server(out, "127.0.0.1", 0)
+        t = threading.Thread(target=srv.serve_forever, daemon=True)
+        t.start()
+        return srv, srv.server_address[1]
+
+    def test_security_headers_and_no_version_disclosure(self):
+        with tempfile.TemporaryDirectory() as td:
+            out = Path(td)
+            (out / "dashboard_v2.html").write_text("<html><body>SECFEDCLAW</body></html>")
+            srv, port = self._serve(out)
+            try:
+                with urllib.request.urlopen(f"http://127.0.0.1:{port}/dashboard_v2.html", timeout=5) as r:
+                    h = r.headers
+                self.assertEqual(h.get("X-Content-Type-Options"), "nosniff")
+                self.assertEqual(h.get("X-Frame-Options"), "DENY")
+                self.assertEqual(h.get("Referrer-Policy"), "no-referrer")
+                self.assertIn("default-src 'none'", h.get("Content-Security-Policy", ""))
+                self.assertNotIn("Python/", h.get("Server", ""))  # version not disclosed
+            finally:
+                srv.shutdown(); srv.server_close()
+
+    def test_directory_listing_disabled(self):
+        with tempfile.TemporaryDirectory() as td:
+            out = Path(td)
+            (out / "dashboard_v2.html").write_text("<html>x</html>")
+            (out / "usage").mkdir()
+            (out / "usage" / "llm_usage.jsonl").write_text('{"x":1}\n')
+            srv, port = self._serve(out)
+            try:
+                # the directory itself must 404 (no autoindex), but a known file is still served
+                with self.assertRaises(urllib.error.HTTPError) as cm:
+                    urllib.request.urlopen(f"http://127.0.0.1:{port}/usage/", timeout=5)
+                self.assertEqual(cm.exception.code, 404)
+                with urllib.request.urlopen(f"http://127.0.0.1:{port}/usage/llm_usage.jsonl", timeout=5) as r:
+                    self.assertEqual(r.status, 200)
+            finally:
+                srv.shutdown(); srv.server_close()
 
 
 class TestDigestLink(unittest.TestCase):

@@ -37,7 +37,7 @@ pip install -r requirements-dev.txt               # numpy + dev tooling
 # 1) Run fully offline (no keys) — replays cached custody artifacts:
 python3 scan.py --no-live --tickers AAPL TSLA AMC GME
 python3 dashboard_v2.py                             # -> out/dashboard_v2.html
-python3 serve.py                                    # view at http://127.0.0.1:8787/
+python3 serve.py                                    # prints a tokenized URL — open that
 
 # 2) Develop & test:
 python3 -m pytest -q -m "not slow"                  # fast suite (~1–2 min)
@@ -524,11 +524,21 @@ The dashboard is a single self-contained HTML file. To view it at a stable URL
 (and have the digest link to it), run a lightweight local server:
 
 ```bash
-python3 serve.py                 # http://127.0.0.1:8787/  (localhost only)
-export SECFEDCLAW_DASHBOARD_URL=http://127.0.0.1:8787/dashboard_v2.html   # digest deep-link
+python3 serve.py                 # 127.0.0.1:8787; prints a tokenized URL — open that
+export SECFEDCLAW_DASHBOARD_URL='http://127.0.0.1:8787/dashboard_v2.html?token=…'  # digest deep-link
 ```
 
-**Privacy:** `serve.py` binds to **127.0.0.1 by default** — the dashboard carries
+**Access control (on by default).** `serve.py` requires a **per-process access
+token** even on localhost — it roots at `out/`, which holds the WATCH packages
+and the cost ledger, so an unauthenticated server would expose all of it to any
+local process. The token auto-generates and is printed at startup (pass it as
+`?token=…` or `Authorization: Bearer …`); the printed URL already includes it,
+and the dashboard threads it through its own links. Pass `--token <secret>` to
+fix it, or `--no-token` to disable (not recommended). Every response also carries
+hardening headers (`nosniff`, `X-Frame-Options: DENY`, a strict CSP,
+`Referrer-Policy: no-referrer`) and directory listing is disabled.
+
+**Privacy:** binds to **127.0.0.1 by default** — the dashboard carries
 enforcement-adjacent WATCH content and must not be exposed on a network or the
 public internet without a deliberate, authorized decision. `--host 0.0.0.0` is
 possible but prints a warning. Publishing to a public host (e.g. GitHub Pages)
