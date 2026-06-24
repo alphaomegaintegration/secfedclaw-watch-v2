@@ -99,6 +99,31 @@ def test_gemini_flash_priced_paid():
     assert usage.is_free("google_genai/gemini-2.5-flash") is False
 
 
+# ---- panel text accuracy (guards against stale-count / stale-model drift) --
+
+def test_agents_panel_count_matches_pipeline():
+    """Intro must name the real agent count — it drifted to 'four' after the
+    Explainer (5th agent) was added."""
+    import dashboard_v2 as d
+    counts = {1: "one", 2: "two", 3: "three", 4: "four", 5: "five", 6: "six"}
+    word = counts[len(d.AGENTS)]
+    html = d.agents_panel({"review_queue": []})
+    assert f"{word}-agent pipeline" in html
+    # no off-by-one stale count survives
+    for n, w in counts.items():
+        if n != len(d.AGENTS):
+            assert f"{w}-agent pipeline" not in html
+
+
+def test_status_panel_search_note_tracks_live_model():
+    """The agent-perf note must name the live search model, not a hardcoded
+    provider (it said 'local-Ollama' after search moved to Gemini)."""
+    import dashboard_v2 as d
+    html = d.agent_status_panel({"review_queue": []})
+    assert "local-Ollama search latency" not in html
+    assert "the search-LLM (" in html  # interpolates the live model name
+
+
 def test_last_run_prefers_manifest_over_daily_summary(monkeypatch):
     # "Last run" must reflect the latest scan (run_manifest, written by every
     # scan incl. server reruns), not only daily.py's older summary.

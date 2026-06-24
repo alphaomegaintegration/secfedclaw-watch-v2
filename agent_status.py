@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Agent + integration status for SECFEDCLAW v0.2.
 
-Assembles a single status object describing the four agents, the integrations
+Assembles a single status object describing the five agents, the integrations
 each depends on, live/replay connection health, and overall system state
 (preflight verdict, last run, model, ledger, LLM spend) — the operational view
 'from an agent perspective' for the dashboard.
