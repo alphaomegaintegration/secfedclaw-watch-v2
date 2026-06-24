@@ -923,6 +923,9 @@ a:focus-visible{outline:3px solid var(--brand);outline-offset:2px;border-radius:
 .sidebar-toggle:hover{background:rgba(255,255,255,.12);color:#fff}
 .sidebar-toggle:focus-visible{outline:3px solid rgba(255,255,255,.6);outline-offset:2px}
 .tabs{display:flex;flex-direction:column;gap:2px;padding:var(--s2);overflow-y:auto;flex:1}
+.nav-section{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:rgba(255,255,255,.45);padding:9px var(--s3) 4px;margin-top:var(--s2)}
+.nav-section:first-child{margin-top:0}
+.sidebar.collapsed .nav-section{display:none}
 .tab{padding:9px var(--s3);background:transparent;border:1px solid transparent;border-radius:var(--radius);cursor:pointer;font-weight:600;font-size:13.5px;color:rgba(255,255,255,.7);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;transition:background .1s,color .1s;text-align:left;width:100%}
 .tab:hover{color:#fff;background:rgba(255,255,255,.1)}
 .tab.active{background:rgba(255,255,255,.18);color:#fff;border-color:rgba(255,255,255,.25)}
@@ -1173,16 +1176,30 @@ def _tab(label: str, pid: str, active: bool = False) -> str:
     return f'<div class="tab{" active" if active else ""}" data-id="{pid}" onclick="show(\'{pid}\',this)">{esc(label)}</div>'
 
 
+def _nav_section(label: str) -> str:
+    """Sidebar group header — labels a cluster of related tabs (wayfinding)."""
+    return f'<div class="nav-section">{esc(label)}</div>'
+
+
 def build_html(queue: dict, packages: list, bt: dict) -> str:
     gen = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     mode = queue.get("data_mode", "?")
     n_pkg = len([p for p in packages if p])
-    tabs = (_tab("Overview", "overview", True) + _tab("Packages", "packages")
-            + _tab("Network", "network") + _tab("How it works", "howitworks")
-            + _tab("Agents", "agents") + _tab("Learning", "learning")
-            + _tab("Status", "status") + _tab("Runs", "runs") + _tab("LLM cost", "llm")
-            + _tab("Methodology", "methodology") + _tab("SEC case studies", "cases")
-            + _tab("Backtest", "backtest"))
+    # Three labeled sections, examiner-facing output first (wayfinding > a flat
+    # 12-item list). Review = the meat (queue, packages, agent output, network
+    # evidence, calibration); Operations = run + model health; Reference = the
+    # explainers. Panel order below is reordered to match.
+    tabs = (
+        _nav_section("Review")
+        + _tab("Overview", "overview", True) + _tab("Packages", "packages")
+        + _tab("Agents", "agents") + _tab("Network", "network") + _tab("Backtest", "backtest")
+        + _nav_section("Operations")
+        + _tab("Status", "status") + _tab("Runs", "runs")
+        + _tab("Learning", "learning") + _tab("LLM cost", "llm")
+        + _nav_section("Reference")
+        + _tab("How it works", "howitworks") + _tab("Methodology", "methodology")
+        + _tab("SEC case studies", "cases")
+    )
     return (
         "<!doctype html><html lang='en'><head><meta charset='utf-8'>"
         "<meta name='viewport' content='width=device-width,initial-scale=1'>"
