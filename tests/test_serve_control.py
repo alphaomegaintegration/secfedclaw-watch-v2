@@ -319,3 +319,36 @@ class TestRetrainEndpoint(unittest.TestCase):
         with self.assertRaises(urllib.error.HTTPError) as cm:
             _post(port, "/api/retrain", {})
         self.assertEqual(cm.exception.code, 401)
+
+    def test_retrain_single_flight_conflict(self):
+        """A second retrain while one is in-flight gets 409 (train_model.py would
+        otherwise race on model.json). The first request blocks on an Event so the
+        second is guaranteed to arrive mid-run; releasing it lets the first finish."""
+        import threading as _t
+        started, release = _t.Event(), _t.Event()
+
+        def slow(out_dir):
+            started.set()
+            release.wait(timeout=5)
+            return {"retrained": True, "abstain": True, "reason": "ok"}
+
+        serve._retrain_model = slow
+        port = self._serve()
+        first_status = {}
+
+        def fire_first():
+            first_status["code"] = _post(port, "/api/retrain", {}).status
+
+        t = _t.Thread(target=fire_first, daemon=True)
+        t.start()
+        self.assertTrue(started.wait(timeout=5), "first retrain never started")
+        # Second request arrives while the first holds the lock → 409.
+        with self.assertRaises(urllib.error.HTTPError) as cm:
+            _post(port, "/api/retrain", {})
+        self.assertEqual(cm.exception.code, 409)
+        release.set()
+        t.join(timeout=5)
+        self.assertEqual(first_status.get("code"), 200)
+        # Lock is released afterwards — a later retrain succeeds, not 409.
+        serve._retrain_model = lambda out_dir: {"retrained": True, "abstain": True, "reason": "x"}
+        self.assertEqual(_post(port, "/api/retrain", {}).status, 200)

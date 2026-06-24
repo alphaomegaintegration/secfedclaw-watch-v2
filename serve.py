@@ -37,6 +37,9 @@ _MAX_UNIVERSE = 50
 # Injected at server start. _RUN_MANAGER backs the POST /api/rerun control plane.
 _REQUIRED_TOKEN: str | None = None
 _RUN_MANAGER: "RunManager | None" = None
+# Single-flight guard for /api/retrain: train_model.py writes model.json, so two
+# concurrent retrains would race on it. A second request gets 409 while one runs.
+_RETRAIN_LOCK = threading.Lock()
 
 
 def _failed_tickers(out_dir: Path) -> list[str]:
@@ -158,11 +161,17 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     def _handle_retrain(self, body: dict):
         """POST /api/retrain — retrain the review-priority model on the current
         ledger labels, completing the label → learn → advise loop in-app.
-        Body may be empty ({}). Returns the resulting model status."""
+        Single-flight: two concurrent retrains would race on model.json, so a
+        second request gets 409 while one is running. Body may be empty ({})."""
+        if not _RETRAIN_LOCK.acquire(blocking=False):
+            return self._send(409, "application/json",
+                              json.dumps({"error": "a retrain is already in progress"}).encode())
         try:
             res = _retrain_model(_RUN_MANAGER.out_dir if _RUN_MANAGER else Path("out"))
         except Exception as e:
             return self._send(500, "text/plain", f"500 retrain failed: {type(e).__name__}\n".encode())
+        finally:
+            _RETRAIN_LOCK.release()
         return self._send(200, "application/json", json.dumps(res).encode())
 
     def _handle_label(self, body: dict):
@@ -267,8 +276,13 @@ def make_server(directory: Path, host: str = "127.0.0.1", port: int = 0,
     _RUN_MANAGER = run_manager or RunManager(out_dir=directory)
     OUT.mkdir(parents=True, exist_ok=True)
     handler = functools.partial(Handler, directory=str(directory))
-    socketserver.TCPServer.allow_reuse_address = True
-    return socketserver.TCPServer((host, port), handler)
+    # Threaded: a slow request (e.g. /api/retrain running train_model.py) must
+    # not freeze the whole dashboard — other requests (Runs polling, GETs) keep
+    # being served on their own threads. daemon_threads so Ctrl-C exits cleanly.
+    class _Server(socketserver.ThreadingMixIn, socketserver.TCPServer):
+        allow_reuse_address = True
+        daemon_threads = True
+    return _Server((host, port), handler)
 
 
 def main() -> int:
