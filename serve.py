@@ -135,11 +135,43 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return
         return super().do_GET()
 
+    def _handle_label(self, body: dict):
+        """POST /api/label — record an operator outcome label on a package,
+        closing the human-in-the-loop feedback the Learning panel describes.
+        Body: {package: '<file>_watch_v2.json', label: <valid>, note?: str}."""
+        import ledger as L  # lazy: keep the static server light
+        label = body.get("label")
+        if label not in L.VALID:
+            return self._send(400, "text/plain",
+                              f"400 Bad Request: label must be one of {sorted(L.VALID)}\n".encode())
+        pkg = body.get("package")
+        # Path-traversal guard: a bare *_watch_v2.json filename, direct child of out/.
+        if (not isinstance(pkg, str) or "/" in pkg or "\\" in pkg or ".." in pkg
+                or not pkg.endswith("_watch_v2.json")):
+            return self._send(400, "text/plain", b"400 Bad Request: invalid package name\n")
+        out_dir = _RUN_MANAGER.out_dir if _RUN_MANAGER else Path("out")
+        pkg_path = out_dir / pkg
+        if not pkg_path.exists():
+            return self._send(404, "text/plain", b"404 Not Found: package\n")
+        note = (body.get("note") or "")
+        note = note[:500] if isinstance(note, str) else ""
+        try:
+            package = json.loads(pkg_path.read_text())
+            row = L.add_label(package, label, note=note)
+            s = L.summary()
+        except Exception as e:
+            return self._send(500, "text/plain",
+                              f"500 label failed: {type(e).__name__}\n".encode())
+        return self._send(200, "application/json", json.dumps({
+            "recorded": True, "ticker": row.get("ticker"), "label": row.get("label"),
+            "y": row.get("y"), "n_labels": s.get("n_labels")}).encode())
+
     def do_POST(self):  # noqa: N802
-        # Control plane: trigger a re-run. Same token gate as GET.
+        # Control plane: trigger a re-run, or record an operator label. Same token gate as GET.
         if not self._authorized():
             return self._send(401, "text/plain", b"401 Unauthorized: missing or invalid token\n")
-        if self.path.split("?")[0] != "/api/rerun":
+        path = self.path.split("?")[0]
+        if path not in ("/api/rerun", "/api/label"):
             return self._send(404, "text/plain", b"404 Not Found\n")
         # application/json only: a cross-origin JSON POST triggers a CORS
         # preflight this server never answers, so this blocks form-based CSRF
@@ -158,6 +190,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             assert isinstance(body, dict)
         except Exception:
             return self._send(400, "text/plain", b"400 Bad Request: invalid JSON object\n")
+
+        if path == "/api/label":
+            return self._handle_label(body)
 
         live = bool(body.get("live", False))
         if body.get("failed"):

@@ -203,3 +203,68 @@ class TestDefaultRunnerIntegration(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class TestLabelEndpoint(unittest.TestCase):
+    """POST /api/label — operator records an outcome label on a package."""
+    def setUp(self):
+        self._td = __import__("tempfile").TemporaryDirectory()
+        self.out = Path(self._td.name)
+        self.srv = None
+
+    def tearDown(self):
+        if self.srv:
+            self.srv.shutdown(); self.srv.server_close()
+        self._td.cleanup()
+
+    def _serve(self, token=None):
+        self.srv, port, _ = _start(self.out, token=token)
+        return port
+
+    def test_label_records_to_ledger(self):
+        import ledger
+        (self.out / "AMC_20260101T000000Z_watch_v2.json").write_text(
+            json.dumps({"ticker": "AMC", "review_priority": "MEDIUM"}))
+        cap = {}
+        orig_add, orig_sum = ledger.add_label, ledger.summary
+        ledger.add_label = lambda pkg, label, note="": (
+            cap.update(pkg=pkg, label=label, note=note)
+            or {"ticker": pkg.get("ticker"), "label": label, "y": 1})
+        ledger.summary = lambda *a, **k: {"n_labels": 7}
+        try:
+            port = self._serve()
+            r = _post(port, "/api/label", {"package": "AMC_20260101T000000Z_watch_v2.json",
+                                           "label": "useful_watch", "note": "promoter selling"})
+            self.assertEqual(r.status, 200)
+            j = json.loads(r.read())
+            self.assertTrue(j["recorded"]); self.assertEqual(j["ticker"], "AMC")
+            self.assertEqual(j["n_labels"], 7)
+            self.assertEqual(cap["label"], "useful_watch")
+            self.assertEqual(cap["pkg"]["ticker"], "AMC")  # the loaded package dict
+            self.assertEqual(cap["note"], "promoter selling")
+        finally:
+            ledger.add_label, ledger.summary = orig_add, orig_sum
+
+    def _expect_code(self, body, code):
+        port = self._serve()
+        with self.assertRaises(urllib.error.HTTPError) as cm:
+            _post(port, "/api/label", body)
+        self.assertEqual(cm.exception.code, code)
+
+    def test_rejects_invalid_label(self):
+        self._expect_code({"package": "AMC_x_watch_v2.json", "label": "guilty"}, 400)
+
+    def test_rejects_path_traversal(self):
+        self._expect_code({"package": "../secret.json", "label": "useful_watch"}, 400)
+
+    def test_rejects_non_package_name(self):
+        self._expect_code({"package": "evil.txt", "label": "useful_watch"}, 400)
+
+    def test_missing_package_is_404(self):
+        self._expect_code({"package": "NOPE_watch_v2.json", "label": "useful_watch"}, 404)
+
+    def test_token_gated(self):
+        port = self._serve(token="sekret")
+        with self.assertRaises(urllib.error.HTTPError) as cm:
+            _post(port, "/api/label", {"package": "X_watch_v2.json", "label": "useful_watch"})
+        self.assertEqual(cm.exception.code, 401)

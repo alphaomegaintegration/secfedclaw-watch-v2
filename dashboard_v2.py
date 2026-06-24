@@ -273,6 +273,22 @@ def _pkg_drilldown(p: dict[str, Any]) -> str:
     return ("<div class='dd-wrap'>" + "".join(out) + "</div>") if out else ""
 
 
+def _pkg_label_actions(p: dict[str, Any]) -> str:
+    """Examiner action row — record an outcome label on this exact package.
+    Only rendered when the package's source file is known (so the POST can
+    target it). Posts to serve.py /api/label; degrades to a hint on file://."""
+    f = p.get("_source_file")
+    if not f:
+        return ""
+    btns = [("useful_watch", "Useful watch"), ("false_positive", "False positive"),
+            ("benign_explained", "Benign")]
+    b = "".join(
+        f'<button class="lbl-btn" onclick="label(\'{esc(f)}\',\'{lab}\',this)">{esc(txt)}</button>'
+        for lab, txt in btns)
+    return (f'<div class="lbl-actions"><span class="lbl-cap">Examiner label:</span>'
+            f'{b}<span class="lbl-status muted small"></span></div>')
+
+
 def package_cards(packages: list[dict[str, Any]]) -> str:
     cards = []
     for p in sorted(packages, key=lambda d: d.get("watch_score", 0), reverse=True)[:24]:
@@ -334,6 +350,7 @@ def package_cards(packages: list[dict[str, Any]]) -> str:
             + f'<p class="small adv"><b>Adversary:</b> {esc("; ".join(adv[:2]))}</p>'
             f'<p class="small rationale">{esc(p.get("non_accusatory_rationale",""))}</p>'
             + _pkg_drilldown(p)
+            + _pkg_label_actions(p)
             + '</details>')
     return "".join(cards) or '<p class="muted">No packages yet. Run scan.py.</p>'
 
@@ -1103,6 +1120,13 @@ details.dd>summary:hover{color:var(--brand)}
 .dd-n{color:var(--faint);font-weight:400}
 .dd-list{margin:2px 0 6px 20px;color:var(--muted)}.dd-list li{margin:2px 0}
 .mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--faint)}
+/* examiner label actions */
+.lbl-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:var(--s2);padding-top:var(--s2);border-top:1px solid var(--line)}
+.lbl-cap{font-size:12px;font-weight:600;color:var(--muted)}
+.lbl-btn{font:inherit;font-size:12px;padding:4px 10px;border:1px solid var(--line-2);border-radius:var(--radius);background:var(--bg);color:var(--brand);cursor:pointer;transition:background .1s}
+.lbl-btn:hover{background:var(--brand-light)}
+.lbl-btn:disabled{opacity:.5;cursor:default;background:var(--panel)}
+.lbl-status{margin-left:4px}
 .warn{color:var(--high);font-weight:600}.adv{color:var(--brand)}.model{color:#6b48a8}.enf{color:#8b2d5e}.promo{color:var(--crit);font-weight:600}
 .si{color:#0a6b54}.si-list{margin:2px 0 6px 18px;color:var(--muted)}
 .expl{background:var(--brand-light);border-radius:var(--radius);padding:8px 10px;color:var(--ink);border:1px solid rgba(0,94,162,.15)}
@@ -1235,6 +1259,21 @@ function rerun(failed){
        setTimeout(function(){loadRuns(true);},400);
      }else{msg.textContent='Could not start run ('+r.status+'): '+r.t.replace(/^\d+\s*/,'').replace(/^Bad Request:\s*/,'');}
    }).catch(function(e){msg.textContent='Request failed: '+(e.message||e)+' — is serve.py running?';});
+}
+// Examiner labels a package (closes the human-in-the-loop feedback). POSTs to
+// serve.py; degrades gracefully when the dashboard is opened as a file:// (no server).
+function label(file,lbl,btn){
+  var row=btn.closest('.lbl-actions'); var st=row.querySelector('.lbl-status');
+  st.textContent='saving…';
+  fetch(_u('/api/label'),{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({package:file,label:lbl})})
+   .then(function(r){return r.text().then(function(t){return {ok:r.ok,status:r.status,t:t};});})
+   .then(function(r){
+     if(r.ok){var j={};try{j=JSON.parse(r.t);}catch(e){}
+       st.textContent='✓ labeled '+(j.label||lbl)+' (ledger: '+(j.n_labels||'?')+')';
+       row.querySelectorAll('.lbl-btn').forEach(function(b){b.disabled=true;});
+     }else{st.textContent='✗ '+r.t.replace(/\n/g,' ').replace(/^\d+\s*/,'').slice(0,90);}
+   }).catch(function(e){st.textContent='✗ needs serve.py running (python3 serve.py)';});
 }
 setInterval(loadRuns,4000);
 """
@@ -1376,8 +1415,12 @@ def render(out_dir: Path | None = None, out_path: Path | None = None) -> tuple[P
     out = Path(out_path) if out_path else (d / "dashboard_v2.html")
     queue = load(d / "review_queue.json", {})
     bt = load(d / "backtest_results.json", {})
-    packages = [load(p, {}) for p in sorted(d.glob("*_watch_v2.json"))]
-    packages = [p for p in packages if p]
+    packages = []
+    for p in sorted(d.glob("*_watch_v2.json")):
+        pkg = load(p, {})
+        if pkg:
+            pkg["_source_file"] = p.name  # so a card can label this exact package
+            packages.append(pkg)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(build_html(queue, packages, bt))
     return out, {"queue_rows": len(queue.get("review_queue", [])),
