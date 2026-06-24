@@ -137,6 +137,36 @@ def _call_anthropic(system: str, user: str, env: dict, model: str, timeout: int 
             "output_tokens": u.get("output_tokens", 0)}
 
 
+def _call_bedrock(system: str, user: str, env: dict, model: str, timeout: int = 30):
+    """AWS Bedrock via boto3 (no API key — boto3 resolves creds from the standard
+    chain: instance role on EC2, SSO, or env). Only fires for a 'bedrock/<id>'
+    model; returns None otherwise or if boto3/Bedrock is unavailable, so it slots
+    harmlessly into the provider chain alongside OpenRouter/Anthropic."""
+    if not model.lower().startswith(("bedrock/", "bedrock_converse/")):
+        return None
+    try:
+        import boto3
+    except Exception:
+        return None
+    model_id = model.split("/", 1)[1]
+    region = env.get("AWS_REGION") or env.get("AWS_DEFAULT_REGION")
+    try:
+        client = boto3.client("bedrock-runtime", region_name=region) if region else boto3.client("bedrock-runtime")
+        resp = client.converse(
+            modelId=model_id,
+            system=[{"text": system}],
+            messages=[{"role": "user", "content": [{"text": user}]}],
+            inferenceConfig={"maxTokens": 320, "temperature": 0.2},
+        )
+    except Exception:
+        return None
+    blocks = (((resp.get("output") or {}).get("message") or {}).get("content")) or []
+    text = "".join(b.get("text", "") for b in blocks if isinstance(b, dict)).strip()
+    u = resp.get("usage") or {}
+    return {"text": text, "model": model_id, "input_tokens": u.get("inputTokens", 0),
+            "output_tokens": u.get("outputTokens", 0)}
+
+
 def _passes_guardrail(text: str) -> bool:
     if not text or len(text) < 40:
         return False
@@ -163,6 +193,7 @@ def explain(package: dict[str, Any], env: dict | None = None, prefer_llm: bool |
         system, user = _build_messages(package)
         model = os.environ.get("SECFEDCLAW_LLM_MODEL") or "anthropic/claude-3.5-haiku"
         providers = [caller] if caller else [
+            lambda s, u, e, m: _call_bedrock(s, u, e, m),   # fires only for bedrock/* models
             lambda s, u, e, m: _call_openrouter(s, u, e, m),
             lambda s, u, e, m: _call_anthropic(s, u, e, m.split("/")[-1] if "/" in m else m),
         ]

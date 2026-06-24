@@ -243,6 +243,25 @@ def test_llm_config_local_and_hosted():
                                  "OPENROUTER_API_KEY": "k"})._llm_config()["llm"]
     assert hosted["api_key"] == "k" and "openrouter" in hosted["base_url"]
 
+def test_llm_config_bedrock():
+    # AWS Bedrock: no API key (boto3 credential chain), region passed through,
+    # model kept verbatim for langchain-aws. The AWS-native deploy path.
+    p = ScrapeProvider(env={"SGAI_MODEL": "bedrock/anthropic.claude-3-5-haiku-20241022-v1:0",
+                            "AWS_REGION": "us-east-1"})
+    assert p._is_bedrock() and p._required_key() is None   # no LLM secret needed
+    b = p._llm_config()["llm"]
+    assert b["model"] == "bedrock/anthropic.claude-3-5-haiku-20241022-v1:0"
+    assert "api_key" not in b and b["region_name"] == "us-east-1"
+
+def test_bedrock_search_needs_no_api_key(monkeypatch):
+    # A bedrock model must NOT be skipped for a missing key (it has none) — it
+    # proceeds to scrapegraphai, unlike a keyless Gemini/OpenRouter model.
+    monkeypatch.setattr(sp, "_scrapegraphai_installed", lambda: True)
+    info = [{"node_name": "TOTAL RESULT", "prompt_tokens": 10, "completion_tokens": 5}]
+    with fake_sgai(search_out={"posts": [{"text": "x", "platform": "x"}]}, exec_info=info):
+        res = ScrapeProvider(env={"SGAI_MODEL": "bedrock/anthropic.claude-3-5-haiku-20241022-v1:0"}).search("$AMC")
+    assert res is not None and res.provider == "scrapegraphai"
+
 def test_search_results_and_concurrency_config():
     p = ScrapeProvider(env={})
     assert p.search_results == sp.DEFAULT_SEARCH_RESULTS and p.max_searches == sp.DEFAULT_MAX_SEARCHES

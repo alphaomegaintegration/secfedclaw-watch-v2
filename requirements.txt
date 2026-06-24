@@ -28,3 +28,12 @@
 #
 # scrapegraphai
 # langchain-google-genai   # only when SGAI_MODEL is a Gemini model
+#
+# ---- Optional: AWS Bedrock LLM (no API key — instance-role auth) ---------
+# Run the search LLM and/or the Explainer on Amazon Bedrock (preferred for an
+# AWS-native or GovCloud/FedRAMP deploy). Set SGAI_MODEL=bedrock/<model-id> and
+# AWS_REGION; boto3 (already used elsewhere) resolves creds from the standard
+# chain. See README §14 "LLM via AWS Bedrock".
+#
+# langchain-aws            # backs the Bedrock provider for scrapegraphai search
+# boto3                    # Bedrock converse API for the Explainer agent

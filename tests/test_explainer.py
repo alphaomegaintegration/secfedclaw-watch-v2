@@ -72,5 +72,51 @@ class TestLLMPathRecordsUsage(unittest.TestCase):
             self.assertGreater(rows[0]["cost_usd"], 0)
 
 
+class TestBedrockProvider(unittest.TestCase):
+    """AWS Bedrock path: no API key, boto3 credential chain, converse API."""
+
+    def test_skips_non_bedrock_model(self):
+        # _call_bedrock must no-op for non-bedrock models so it slots harmlessly
+        # into the provider chain.
+        self.assertIsNone(explainer._call_bedrock("s", "u", {}, "anthropic/claude-3.5-haiku"))
+
+    def test_bedrock_converse_parsed_and_recorded(self):
+        import types
+        sent = {}
+
+        class _FakeClient:
+            def converse(self, **kw):
+                sent.update(kw)
+                return {"output": {"message": {"content": [
+                            {"text": "ABCD shows a confirmed price+volume move alongside a coordinated "
+                                     "promotional cluster; review for benign catalysts first."}]}},
+                        "usage": {"inputTokens": 700, "outputTokens": 90}}
+
+        import os
+        fake_boto3 = types.ModuleType("boto3")
+        fake_boto3.client = lambda *a, **k: _FakeClient()
+        saved = sys.modules.get("boto3")
+        sys.modules["boto3"] = fake_boto3
+        os.environ["SECFEDCLAW_LLM_MODEL"] = "bedrock/anthropic.claude-3-5-haiku-20241022-v1:0"
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                usage.LEDGER = Path(tmp) / "u.jsonl"
+                # No injected caller: exercises the real provider chain, where
+                # _call_bedrock fires first for a bedrock/* model.
+                res = explainer.explain(PKG, env={"AWS_REGION": "us-east-1"}, prefer_llm=True)
+                rows = usage.load(usage.LEDGER)
+            self.assertEqual(res["source"], "llm")
+            self.assertEqual(res["model"], "anthropic.claude-3-5-haiku-20241022-v1:0")  # bedrock/ prefix stripped
+            self.assertEqual(sent["modelId"], "anthropic.claude-3-5-haiku-20241022-v1:0")
+            self.assertIn(explainer.DISCLAIMER, res["text"])
+            self.assertEqual(rows[0]["component"], "explainer")  # cost recorded
+        finally:
+            os.environ.pop("SECFEDCLAW_LLM_MODEL", None)
+            if saved is not None:
+                sys.modules["boto3"] = saved
+            else:
+                sys.modules.pop("boto3", None)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
