@@ -204,6 +204,75 @@ def social_intel_card(p: dict[str, Any]) -> str:
     return out
 
 
+_MED_PLUS = {"CRITICAL_REVIEW", "HIGH", "MEDIUM"}
+
+
+def _dd(title: str, n: int | str, body: str) -> str:
+    """One collapsible drill-down block (count in the summary, detail on expand)."""
+    if not body:
+        return ""
+    return (f'<details class="dd"><summary>{esc(title)} '
+            f'<span class="dd-n">{esc(str(n))}</span></summary>{body}</details>')
+
+
+def _pkg_drilldown(p: dict[str, Any]) -> str:
+    """Expandable evidence the examiner can open — turns the card's summary
+    counts into the underlying questions, signals, custody artifacts, and the
+    WATCH boundary. All from data already in the package (static, no backend)."""
+    import os
+    out = []
+    # Examiner checklist — the questions to ask of this package.
+    rq = p.get("review_questions") or []
+    if rq:
+        out.append(_dd("Review questions", len(rq),
+                       "<ol class='small dd-list'>" + "".join(f"<li>{esc(q)}</li>" for q in rq) + "</ol>"))
+    # Coordination evidence (the posts/domains behind the cluster count).
+    coord = p.get("coordination_detail") or {}
+    basis = coord.get("basis") or []
+    clusters = coord.get("near_duplicate_clusters") or []
+    domains = coord.get("shared_domain_groups") or []
+    if basis or clusters or domains:
+        b = "<ul class='small dd-list'>" + "".join(f"<li>{esc(x)}</li>" for x in basis) + "</ul>"
+        if clusters:
+            b += (f"<p class='small muted'>{len(clusters)} near-duplicate cluster(s); "
+                  f"max burst {coord.get('max_posts_in_burst','?')} posts. Post IDs:</p>"
+                  "<ul class='small dd-list'>" + "".join(
+                      f"<li>cluster {i+1}: {esc(', '.join(str(x) for x in (c.get('post_ids') or [])[:8]))}</li>"
+                      for i, c in enumerate(clusters[:6])) + "</ul>")
+        if domains:
+            b += "<p class='small muted'>Shared domains:</p><ul class='small dd-list'>" + "".join(
+                f"<li>{esc(str(g))}</li>" for g in domains[:8]) + "</ul>"
+        out.append(_dd("Coordination evidence", len(clusters) or len(basis), b))
+    # Market anomaly basis (the z-scores behind the market score).
+    md = p.get("market_detail") or {}
+    ab = md.get("anomaly_basis") or []
+    if ab:
+        out.append(_dd("Market anomaly basis", len(ab),
+                       "<ul class='small dd-list'>" + "".join(f"<li>{esc(x)}</li>" for x in ab) + "</ul>"))
+    # Limitations + evidence gaps — what is NOT established.
+    lim = (p.get("limitations") or []) + [f"gap: {g}" for g in (p.get("evidence_gaps") or [])]
+    if lim:
+        out.append(_dd("Limitations & gaps", len(lim),
+                       "<ul class='small dd-list'>" + "".join(f"<li>{esc(x)}</li>" for x in lim) + "</ul>"))
+    # Custody trail — every raw artifact with its SHA256, for verification.
+    ev = p.get("evidence") or []
+    if ev:
+        rows = "".join(
+            f"<tr><td class='small'>{esc(os.path.basename(e.get('artifact_path','') or '—'))}</td>"
+            f"<td class='small mono' title='{esc(e.get('artifact_path',''))}'>"
+            f"{esc((e.get('artifact_sha256') or '')[:12])}{'…' if e.get('artifact_sha256') else ''}</td></tr>"
+            for e in ev[:40])
+        out.append(_dd("Custody & raw artifacts", len(ev),
+                       "<table class='mini'><thead><tr><th>source</th><th>sha256</th></tr></thead>"
+                       f"<tbody>{rows}</tbody></table>"))
+    # WATCH boundary — the prohibited actions, always one click away.
+    pa = p.get("prohibited_actions") or []
+    if pa:
+        out.append(_dd("WATCH boundary (prohibited)", len(pa),
+                       "<ul class='small dd-list'>" + "".join(f"<li>{esc(x)}</li>" for x in pa) + "</ul>"))
+    return ("<div class='dd-wrap'>" + "".join(out) + "</div>") if out else ""
+
+
 def package_cards(packages: list[dict[str, Any]]) -> str:
     cards = []
     for p in sorted(packages, key=lambda d: d.get("watch_score", 0), reverse=True)[:24]:
@@ -226,10 +295,14 @@ def package_cards(packages: list[dict[str, Any]]) -> str:
                    f'P(review-worthy)={ma["review_priority_probability"]:.2f} '
                    f'· top: {esc(", ".join(c["feature"] for c in ma.get("top_features", [])[:3]))}</p>'
                    if ma else "")
+        _pri = p.get("review_priority", "LOW")
+        _open = " open" if _pri in _MED_PLUS else ""  # flagged open; LOW collapsed to cut noise
         cards.append(
-            f'<div class="card pkg" data-priority="{esc(p.get("review_priority"))}">'
-            f'<div class="pkg-head"><h3>{esc(p.get("ticker"))}</h3>{pill(p.get("review_priority","LOW"))}'
-            f'{ticker_links(p.get("ticker",""))}</div>'
+            f'<details class="card pkg" data-priority="{esc(_pri)}"{_open}>'
+            f'<summary class="pkg-head"><h3>{esc(p.get("ticker"))}</h3>{pill(_pri)}'
+            f'<span class="pkg-sum muted">score {p.get("watch_score",0):.0f} · anomaly '
+            f'{p.get("anomaly_evidence_score",0):.0f} · {esc(CLASS_ABBR.get(sc.get("class"), "?"))}</span></summary>'
+            f'{ticker_links(p.get("ticker",""))}'
             f'<p class="muted small">score {p.get("watch_score",0):.0f} · anomaly {p.get("anomaly_evidence_score",0):.0f} '
             f'· evidence-quality {p.get("evidence_quality_score",0):.0f} · {esc(CLASS_ABBR.get(sc.get("class"), "?"))} '
             f'· {esc(p.get("data_mode","?"))}</p>'
@@ -259,7 +332,9 @@ def package_cards(packages: list[dict[str, Any]]) -> str:
                if (p.get("promo_disclosure_detail") or {}).get("has_disclosure") else "")
             + ma_html
             + f'<p class="small adv"><b>Adversary:</b> {esc("; ".join(adv[:2]))}</p>'
-            f'<p class="small rationale">{esc(p.get("non_accusatory_rationale",""))}</p></div>')
+            f'<p class="small rationale">{esc(p.get("non_accusatory_rationale",""))}</p>'
+            + _pkg_drilldown(p)
+            + '</details>')
     return "".join(cards) or '<p class="muted">No packages yet. Run scan.py.</p>'
 
 
@@ -1011,6 +1086,23 @@ tbody tr:hover{background:#f5f7fb}
 
 /* === PACKAGE CARDS === */
 .pkg-head{display:flex;align-items:center;gap:var(--s3);flex-wrap:wrap;margin-bottom:var(--s2)}
+/* collapsible package card: summary is the click target, custom caret */
+details.pkg>summary{cursor:pointer;list-style:none;margin:0 0 var(--s2);align-items:baseline}
+details.pkg>summary::-webkit-details-marker{display:none}
+details.pkg>summary::before{content:"\25B8";color:var(--faint);font-size:11px;margin-right:6px;display:inline-block;transition:transform .12s}
+details.pkg[open]>summary::before{transform:rotate(90deg)}
+details.pkg>summary:hover{color:var(--brand)}
+.pkg-sum{font-weight:400;margin-left:auto;font-size:12px}
+/* drill-down: nested evidence the examiner opens */
+.dd-wrap{margin-top:var(--s2);border-top:1px solid var(--line);padding-top:var(--s2);display:flex;flex-direction:column;gap:4px}
+details.dd>summary{cursor:pointer;font-size:12.5px;font-weight:600;color:var(--muted);padding:4px 0;list-style:none}
+details.dd>summary::-webkit-details-marker{display:none}
+details.dd>summary::before{content:"\25B8";color:var(--faint);font-size:10px;margin-right:6px;transition:transform .12s;display:inline-block}
+details.dd[open]>summary::before{transform:rotate(90deg)}
+details.dd>summary:hover{color:var(--brand)}
+.dd-n{color:var(--faint);font-weight:400}
+.dd-list{margin:2px 0 6px 20px;color:var(--muted)}.dd-list li{margin:2px 0}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--faint)}
 .warn{color:var(--high);font-weight:600}.adv{color:var(--brand)}.model{color:#6b48a8}.enf{color:#8b2d5e}.promo{color:var(--crit);font-weight:600}
 .si{color:#0a6b54}.si-list{margin:2px 0 6px 18px;color:var(--muted)}
 .expl{background:var(--brand-light);border-radius:var(--radius);padding:8px 10px;color:var(--ink);border:1px solid rgba(0,94,162,.15)}
