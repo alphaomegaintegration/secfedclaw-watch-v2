@@ -102,6 +102,7 @@ Recent work that is done and shipped:
 
 - **USWDS/design-system refactor**: consistent color/space/type tokens, accessible contrast, clear section intros throughout the dashboard.
 - **Sidebar navigation**: persistent sidebar nav added to the dashboard for quick tab access.
+- **Sidebar IA — 3 sections** (design-review 2026-06-24, FINDING-001): the flat 12-tab list was grouped into **Review** (Overview/Packages/Agents/Network/Backtest — examiner output), **Operations** (Status/Runs/Learning/LLM cost), and **Reference** (How it works/Methodology/SEC case studies). Examiner-facing output is now first; section labels hide in collapsed-rail mode. Fixes the failed trunk test ("what are the major sections?").
 - **"How it works" interactive workflow tab (tab 11)**: added Scout→Analyst→Adversary→Explainer→Packager visual workflow. (commit 793cfa3)
 - **Coordination network graph (tab 10)**: D3-based network visualization with colored edges and drag interaction; index-based edge lookup fixed. (commits 49a5ff2, 8a68c9b)
 - **FMP (Financial Modeling Prep) connector**: `fmp_quote`, `fmp_profile`, `fmp_historical` — complements Polygon for quotes, profiles, and historical prices. (commit d7dde34)
