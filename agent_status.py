@@ -160,7 +160,12 @@ def build(queue: dict[str, Any] | None = None) -> dict[str, Any]:
         llm = {"n_calls": 0, "total_cost_usd": 0.0}
 
     generated = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-    last_run = summary.get("finished_utc") or summary.get("started_utc", "—")
+    # "Last run" should reflect the latest scan of any kind. The run manifest's
+    # finished_utc is written by every scan (daily.py, direct scan.py, AND
+    # server-triggered reruns), whereas daily_run_summary.json is only written
+    # by daily.py — so prefer the manifest, falling back to the daily summary.
+    last_run = (manifest.get("finished_utc") or summary.get("finished_utc")
+                or manifest.get("started_utc") or summary.get("started_utc") or "—")
     return {
         "generated_utc": generated,
         "system": {
