@@ -13,6 +13,13 @@ section names the tab to open and what to click, with the talk track beneath.
   `python scan.py --live --discover 25`. Confirm the dashboard is served
   (`python serve.py`) and the Status tab reads mostly *live*. Have this script
   and the *SEC case studies* tab open in a second window.
+- **What a real run looks like (reference, 2026-06-24):** a 32-ticker live run
+  (the 7 defaults + 25 discovered movers) produced **2 HIGH, 5 MEDIUM, 25 LOW**,
+  0 errors — and cost **$0.72** in metered LLM search. The mega-cap defaults all
+  scored LOW; every MEDIUM+ was a *discovered* thin/micro-cap. **The specific
+  names and scores below are from that run and will differ on the day you
+  present — they are review-priority illustrations, never allegations.** Re-run
+  the scan the morning of the demo and substitute whatever the top cards are.
 
 > **The one rule that governs everything you'll say:** SECFEDCLAW produces
 > **review priority, never accusations.** It surfaces evidence and ranks where a
@@ -70,6 +77,15 @@ Pause. Then: "Let me show you, against live data."
 > "This is the unit of work the analyst actually consumes — one ticker, one
 > review package. Walk through it with me, because this is where the WATCH
 > boundary becomes concrete."
+
+> **Concrete anchor (from the 2026-06-24 reference run — substitute the day's
+> actual top card):** the two highest cards were **XCH** and **QNRX**, both
+> ranked **HIGH (~53)** on **four corroborating evidence families**. Use one of
+> them as the worked example below. Say it plainly: *"HIGH here means 'a human
+> should look at this first,' not 'this is manipulation.' Let me show you the
+> evidence behind the ranking — and the gaps the tool admits to."* The five
+> MEDIUM cards that day (ADTX, ORIS, CRMT, NAMI, CGTL) are good secondary
+> examples; every one of them was a discovered micro-cap, not a mega-cap.
 
 **Click into the drill-down sections, narrating each:**
 
@@ -182,13 +198,15 @@ Pause. Then: "Let me show you, against live data."
 
 ## 6. Coordination, visualized (90 seconds) — Tab: **Network**
 
-**Open Network. Hover over the largest / highest-scoring ticker node.**
+**Open Network. Hover over the largest / highest-scoring ticker node** (on the
+reference run, the big nodes were **XCH** and **QNRX** — find the day's HIGH names).
 
 > "This is the coordination evidence as a graph — tickers, the platforms they're
 > promoted on, near-duplicate clusters, shared domains, and corroborating
-> families. Hover any node" — *do it* — "and you can inspect it and trace its
-> connections. It's the same evidence the scoring engine uses, made legible — so
-> an analyst can see a coordinated cluster at a glance instead of reading a
+> families. Hover any node" — *do it on a HIGH ticker* — "and you can inspect it
+> and trace its connections — its clusters, the platforms, the families that
+> corroborate it. It's the same evidence the scoring engine uses, made legible —
+> so an analyst can see a coordinated cluster at a glance instead of reading a
 > table."
 
 ---
@@ -207,8 +225,10 @@ Pause. Then: "Let me show you, against live data."
 **Open LLM cost.**
 
 > "And we track cost-to-run transparently — every model call is metered by model
-> and by component. A daily scan over a real universe costs cents. For a public
-> agency that has to account for spend, there are no surprises."
+> and by component. The 32-ticker run behind this demo cost **$0.72** in total —
+> about **two cents per ticker per scan**. A daily watch over a few hundred names
+> lands in the low single-digit dollars per day, and you can see exactly where it
+> went. For a public agency that has to account for spend, there are no surprises."
 
 ---
 
