@@ -672,6 +672,12 @@ def learning_panel() -> str:
         'Rules engine stays primary — model is advisory only, never a guilt label.</p></div>'
         '</div></div>'
         f'<div class="kpis">{kpi_html}</div>'
+        '<div class="card"><h3>Retrain on current labels</h3>'
+        '<p class="small">After labeling packages (Review tab → a package → Examiner label), retrain the '
+        'gradient-boosted model so the advisory probability reflects the new outcomes. Runs '
+        '<code>train_model.py</code> on the ledger; the rules engine stays primary regardless.</p>'
+        '<div class="lbl-actions"><button class="lbl-btn" onclick="retrain(this)">Retrain model</button>'
+        '<span class="lbl-status muted small"></span></div></div>'
         f'<div class="grid2">{imp_html}{label_html}</div>'
         '<div class="card"><h3>Design constraints</h3>'
         '<p class="small">• The model <b>abstains</b> until ≥40 labeled, two-class samples exist (≥8/class) '
@@ -1274,6 +1280,18 @@ function label(file,lbl,btn){
        row.querySelectorAll('.lbl-btn').forEach(function(b){b.disabled=true;});
      }else{st.textContent='✗ '+r.t.replace(/\n/g,' ').replace(/^\d+\s*/,'').slice(0,90);}
    }).catch(function(e){st.textContent='✗ needs serve.py running (python3 serve.py)';});
+}
+// Retrain the model on the current ledger labels (completes label->learn->advise).
+function retrain(btn){
+  var st=btn.parentNode.querySelector('.lbl-status'); btn.disabled=true; st.textContent='retraining… (runs train_model.py)';
+  fetch(_u('/api/retrain'),{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'})
+   .then(function(r){return r.text().then(function(t){return {ok:r.ok,status:r.status,t:t};});})
+   .then(function(r){ btn.disabled=false;
+     if(r.ok){var j={};try{j=JSON.parse(r.t);}catch(e){}
+       st.textContent = j.abstain ? ('model abstains — '+(j.reason||'need more labels'))
+         : ('✓ retrained · AUC '+(j.cv_auc||'?')+' · n='+(j.n_total||'?')+' ('+(j.n_real_labels||0)+' real)');
+     }else{st.textContent='✗ '+r.t.replace(/\n/g,' ').replace(/^\d+\s*/,'').slice(0,90);}
+   }).catch(function(e){btn.disabled=false;st.textContent='✗ needs serve.py running (python3 serve.py)';});
 }
 setInterval(loadRuns,4000);
 """

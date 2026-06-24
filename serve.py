@@ -49,6 +49,26 @@ def _failed_tickers(out_dir: Path) -> list[str]:
             if isinstance(info, dict) and info.get("status") == "error"]
 
 
+def _retrain_model(out_dir: Path) -> dict:
+    """Run train_model.py on the current ledger labels, then read the resulting
+    model status. Module-level so tests can stub it. Returns a JSON-able dict."""
+    import subprocess
+    import sys
+    here = Path(__file__).resolve().parent
+    proc = subprocess.run([sys.executable, "train_model.py"], cwd=str(here),
+                          capture_output=True, text=True, timeout=300)
+    try:
+        import model as M
+        md = M.load_scorer()
+    except Exception:
+        md = None
+    if md and not md.get("abstain"):
+        return {"retrained": True, "abstain": False, "cv_auc": md.get("cv_auc"),
+                "n_total": md.get("n_total"), "n_real_labels": md.get("n_real_labels")}
+    reason = (md or {}).get("reason") or (proc.stdout or proc.stderr or "").strip()[-200:]
+    return {"retrained": True, "abstain": True, "reason": reason}
+
+
 class RunManager:
     """Serializes dashboard-triggered scans. One run at a time; the run executes
     in a daemon thread so the HTTP request returns immediately. The run writes
@@ -135,6 +155,16 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return
         return super().do_GET()
 
+    def _handle_retrain(self, body: dict):
+        """POST /api/retrain — retrain the review-priority model on the current
+        ledger labels, completing the label → learn → advise loop in-app.
+        Body may be empty ({}). Returns the resulting model status."""
+        try:
+            res = _retrain_model(_RUN_MANAGER.out_dir if _RUN_MANAGER else Path("out"))
+        except Exception as e:
+            return self._send(500, "text/plain", f"500 retrain failed: {type(e).__name__}\n".encode())
+        return self._send(200, "application/json", json.dumps(res).encode())
+
     def _handle_label(self, body: dict):
         """POST /api/label — record an operator outcome label on a package,
         closing the human-in-the-loop feedback the Learning panel describes.
@@ -171,7 +201,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         if not self._authorized():
             return self._send(401, "text/plain", b"401 Unauthorized: missing or invalid token\n")
         path = self.path.split("?")[0]
-        if path not in ("/api/rerun", "/api/label"):
+        if path not in ("/api/rerun", "/api/label", "/api/retrain"):
             return self._send(404, "text/plain", b"404 Not Found\n")
         # application/json only: a cross-origin JSON POST triggers a CORS
         # preflight this server never answers, so this blocks form-based CSRF
@@ -193,6 +223,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
         if path == "/api/label":
             return self._handle_label(body)
+        if path == "/api/retrain":
+            return self._handle_retrain(body)
 
         live = bool(body.get("live", False))
         if body.get("failed"):
