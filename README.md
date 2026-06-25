@@ -538,6 +538,27 @@ fix it, or `--no-token` to disable (not recommended). Every response also carrie
 hardening headers (`nosniff`, `X-Frame-Options: DENY`, a strict CSP,
 `Referrer-Policy: no-referrer`) and directory listing is disabled.
 
+**Generating & using the token:**
+
+```bash
+# 1) Auto (default): serve.py prints a fresh token + ready-to-use URL each start.
+python3 -u serve.py            # -u = unbuffered, so the token prints even when backgrounded
+#   Auto-generated access token: <token>
+#   SECFEDCLAW dashboard at http://127.0.0.1:8787/dashboard_v2.html?token=<token>
+
+# 2) Stable: set your own so the URL survives restarts (e.g. for the digest link).
+TOKEN=$(python3 -c 'import secrets; print(secrets.token_urlsafe(16))')
+python3 serve.py --token "$TOKEN"
+
+# 3) Supply it on requests — query param (browser) or Bearer header (scripts):
+curl "http://127.0.0.1:8787/review_queue.json?token=$TOKEN"
+curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8787/review_queue.json
+```
+
+Without a valid token every route returns **401**. The Bearer header is
+preferred for scripts/automation — it keeps the token out of shell history and
+access logs (the query param is convenient for the browser but is logged).
+
 **Privacy:** binds to **127.0.0.1 by default** — the dashboard carries
 enforcement-adjacent WATCH content and must not be exposed on a network or the
 public internet without a deliberate, authorized decision. `--host 0.0.0.0` is
