@@ -738,6 +738,26 @@ Operational notes:
   publishes multi-arch (amd64+arm64) to `ghcr.io/alphaomegaintegration/secfedclaw-watch-v2`
   on `main`/tags (`.github/workflows/docker-publish.yml`).
 
+**Image visibility (private by default — toggle private / internal / public).**
+A new GHCR package is **private**: pulling needs auth
+(`echo $PAT | docker login ghcr.io -u <user> --password-stdin`, PAT with
+`read:packages`). GitHub exposes **no REST/CLI endpoint** to change container
+visibility — it is a UI setting by design (so it can't be flipped in the publish
+workflow). Toggle it in two layers:
+
+1. **Org policy (org owner, one-time):** `github.com` → org **alphaomegaintegration**
+   → Settings → Packages → permit the visibilities you want. **Internal** (all
+   org members) requires **GitHub Enterprise Cloud**; standard orgs have only
+   **Private / Public**.
+2. **Per-package toggle (anytime):** `github.com/orgs/alphaomegaintegration/packages`
+   → **secfedclaw-watch-v2** → Package settings → Danger Zone → **Change
+   visibility** → Private / Internal / Public.
+
+Tip: in Package settings → **Connect repository**, link the package to this repo
+so repo admins inherit management and it appears on the repo page. Making the
+image public exposes only the application code (the `.dockerignore` keeps `.env`
+and all `out/` WATCH data out of the image), never operator data.
+
 ## 15. Enforcement history, per-class calibration, agent status & LLM cost
 
 - **Enforcement-history family** (`features/enforcement.py`) — parses the SEC
