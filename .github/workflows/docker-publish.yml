@@ -1,0 +1,85 @@
+name: Docker
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+    branches: [main]
+
+env:
+  IMAGE: ghcr.io/${{ github.repository }}
+
+jobs:
+  # Build the slim image and run the fast suite INSIDE it — proves the image
+  # actually works (deps present, code importable), not just that the Dockerfile
+  # parses. Runs on every PR so a broken image can't merge green.
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build slim image
+        run: docker build --target runtime -t secfedclaw:ci .
+
+      - name: Run fast test suite inside the image
+        # pytest isn't in the runtime image (it's a runtime image); install it
+        # just for the test run. numpy is already present; scrapegraphai/boto3
+        # are faked by the tests, so the slim image runs the whole fast suite.
+        run: |
+          docker run --rm -u root secfedclaw:ci \
+            sh -lc "pip install --no-cache-dir pytest && python -m pytest -m 'not slow' -q"
+
+      - name: Smoke-test the dashboard server (token + healthcheck path)
+        run: |
+          docker run -d --name sec -p 127.0.0.1:8787:8787 secfedclaw:ci
+          sleep 3
+          # Without a token every route is 401 (token-by-default hardening).
+          code=$(docker run --rm --network host curlimages/curl:latest \
+                   -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8787/ || echo 000)
+          docker logs sec; docker rm -f sec
+          test "$code" = "401" || { echo "expected 401 (token gate), got $code"; exit 1; }
+
+  publish:
+    # Only publish from the main repo on main/tags — never from PRs/forks.
+    if: github.event_name == 'push'
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-qemu-action@v3        # arm64 emulation for multi-arch
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Metadata (tags + labels)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=sha,format=short
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build & push slim (multi-arch)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: runtime
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
