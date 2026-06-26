@@ -1,0 +1,52 @@
+# SECFEDCLAW — local/compose deployment.
+#
+#   docker compose up -d dashboard          # the dashboard web service
+#   docker compose logs dashboard           # grab the printed access token
+#   docker compose --profile batch run --rm daily   # one daily batch cycle
+#
+# Secrets come from a local .env (gitignored) via env_file — never baked into
+# the image. Persistent data is a NAMED VOLUME mounted at every dir the app
+# writes, so WATCH packages, the calibration ledger, and SHA-256 custody survive
+# container restarts (mandatory for an evidence/audit tool).
+
+x-data-volumes: &data-volumes
+  - secfedclaw-out:/app/out
+  - secfedclaw-state:/app/state
+  - secfedclaw-logs:/app/logs
+  - secfedclaw-cache:/app/live_cache
+  - secfedclaw-flatfiles:/app/flatfiles
+
+x-base: &base
+  build:
+    context: .
+    target: runtime            # swap to runtime-playwright for in-container scraping
+  image: secfedclaw:slim
+  env_file:
+    - .env                     # POLYGON_API_KEY, SEC_USER_AGENT, GEMINI_API_KEY, … (optional)
+  volumes: *data-volumes
+
+services:
+  dashboard:
+    <<: *base
+    # Publish to host LOOPBACK ONLY — the dashboard carries WATCH content. The
+    # container binds 0.0.0.0 internally, so serve.py requires an access token
+    # by default (printed in the logs at startup).
+    ports:
+      - "127.0.0.1:8787:8787"
+    restart: unless-stopped
+
+  # Batch pipeline (preflight → EDGAR → scan → backtest → dashboard → digest).
+  # Opt-in profile so `docker compose up` doesn't start it; run on demand or
+  # from host cron / a scheduled task:  docker compose --profile batch run --rm daily
+  daily:
+    <<: *base
+    profiles: ["batch"]
+    command: ["python", "daily.py"]
+    restart: "no"
+
+volumes:
+  secfedclaw-out:
+  secfedclaw-state:
+  secfedclaw-logs:
+  secfedclaw-cache:
+  secfedclaw-flatfiles:

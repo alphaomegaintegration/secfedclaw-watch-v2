@@ -691,6 +691,53 @@ No `GEMINI_API_KEY` / `OPENROUTER_API_KEY` / `ANTHROPIC_API_KEY` is needed when
 Bedrock is the LLM for both seams — the only remaining `.env` secrets are the
 data-source keys (Polygon, etc.), which can themselves live in Secrets Manager.
 
+### Deploy with Docker
+
+A multi-stage `Dockerfile` builds one of two targets (the same code, different
+weight):
+
+| Target | Size | Web/social search | Use it for |
+|---|---|---|---|
+| `runtime` (default) | ~200MB | Firecrawl / Bedrock / replay | dashboard, batch, AWS/Bedrock deploys |
+| `runtime-playwright` | ~1.8GB | in-container Chromium (scrapegraphai) | self-contained live X/social scraping |
+
+```bash
+# Build (slim default, or the Chromium target)
+docker build --target runtime            -t secfedclaw:slim .
+docker build --target runtime-playwright -t secfedclaw:full .   # pin PW_TAG to your playwright version
+
+# Run the dashboard with compose (recommended) — reads .env, persists data,
+# publishes to host loopback only:
+docker compose up -d dashboard
+docker compose logs dashboard          # copy the printed access token
+#   -> http://127.0.0.1:8787/dashboard_v2.html?token=<token>
+
+# One batch cycle (preflight → EDGAR → scan → backtest → dashboard → digest):
+docker compose --profile batch run --rm daily
+
+# Or plain docker:
+docker run -d -p 127.0.0.1:8787:8787 --env-file .env \
+  -v secfedclaw-out:/app/out -v secfedclaw-state:/app/state \
+  -v secfedclaw-logs:/app/logs -v secfedclaw-cache:/app/live_cache \
+  -v secfedclaw-flatfiles:/app/flatfiles  secfedclaw:slim
+```
+
+Operational notes:
+- **Secrets are never baked into the image** — pass them at run time
+  (`--env-file .env`, `-e KEY=…`, Docker secrets, ECS task env, or a Bedrock
+  instance role = no LLM key at all). `.dockerignore` blocks `.env` + `out/`.
+- **Persistence is mandatory.** The named volumes over `out/ state/ logs/
+  live_cache/ flatfiles/` keep WATCH packages, the calibration ledger, and
+  SHA-256 custody across restarts — an evidence tool that forgets is a bug.
+- **Access control composes with the container.** Inside the container the
+  server binds `0.0.0.0`, so `serve.py` **requires a token by default** (printed
+  in the logs). Publish to host **loopback only** (`127.0.0.1:8787:8787`), never
+  `-p 8787:8787`.
+- Runs as a **non-root** user with a `HEALTHCHECK` on `/`.
+- **Image:** CI builds the slim target, runs the fast suite *inside it*, and
+  publishes multi-arch (amd64+arm64) to `ghcr.io/alphaomegaintegration/secfedclaw-watch-v2`
+  on `main`/tags (`.github/workflows/docker-publish.yml`).
+
 ## 15. Enforcement history, per-class calibration, agent status & LLM cost
 
 - **Enforcement-history family** (`features/enforcement.py`) — parses the SEC
