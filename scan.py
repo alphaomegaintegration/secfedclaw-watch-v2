@@ -152,6 +152,14 @@ def run_scan(universe: list[str], *, prefer_live: bool, out_dir: Path | str | No
     atomic_write(out_dir / "review_queue.json", json.dumps(queue, indent=2, default=str) + "\n")
     manifest["finished_utc"] = _iso_utc()
     _write_manifest()
+    # Cross-run entity resolution: fold this run's packages into the persistent
+    # entity graph (accounts/domains/issuers/content-cluster scripts). Idempotent
+    # and best-effort — bookkeeping must never fail a scan.
+    try:
+        import entities
+        entities.observe_dir(out_dir)
+    except Exception:
+        pass
     return queue
 
 
