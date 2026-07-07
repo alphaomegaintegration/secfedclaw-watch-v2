@@ -118,13 +118,24 @@ def _grouped_with(ticker: str, abs_ret: float, log_vol_extreme: bool, rng: rando
     return {"results": pop}
 
 
+# De-circularization: synthetic pump text must NOT be built from the detector's
+# own PROMO_TERMS lexicon, or the backtest just measures the detector memorizing
+# its wordlist. This independent promoter phrasing shares ZERO tokens with
+# features.social.PROMO_TERMS, so a pump is caught by its STRUCTURE — near-
+# duplicate clustering, burst synchronization, few authors — plus the market
+# double-confirmation, which is what real detection must rely on.
+_INDEP_PROMO_BASE = ("${T} the catalyst is lining up here, get positioned before the crowd "
+                     "notices and pass this along to everyone you know")
+_INDEP_PROMO_TAIL = ["act on it today", "spread it around", "early movers win", "tell the group"]
+
+
 def _promo_posts(n: int, ticker: str, coordinated: bool, rng: random.Random) -> dict:
-    base = f"${ticker} guaranteed moon rocket must buy now join telegram free signals 100x"
+    base = _INDEP_PROMO_BASE.replace("${T}", f"${ticker}")
     posts = []
     t0 = 1700000000
     for i in range(n):
         if coordinated:
-            text = base + (" " + rng.choice(["go go go", "last chance", "do not miss"]))
+            text = base + " " + rng.choice(_INDEP_PROMO_TAIL)   # near-duplicate script
         else:
             text = rng.choice([
                 f"${ticker} earnings looked fine, holding long term",

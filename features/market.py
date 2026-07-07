@@ -240,7 +240,11 @@ def market_anomaly_score(ts: dict[str, Any], xs: dict[str, Any], micro: dict[str
             detail["basis"].append(f"wide median spread={micro['median_spread_bps']}bps")
 
     detail["double_confirmed"] = bool(ts_confirmed or xs_confirmed)
-    return rs.squash(score, scale=55, cap=100) if score > 100 else min(score, 100.0), detail
+    # Monotonic clamp: the old `squash if >100 else min` mapped raw 100.1 -> ~84
+    # while 99.9 -> 99.9, so a strictly stronger signal could score LOWER. The
+    # <=100 region (where the bands are calibrated) is unchanged; extreme raw
+    # scores now saturate at 100 instead of folding back down.
+    return min(score, 100.0), detail
 
 
 def _best(*vals: float) -> float:

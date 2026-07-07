@@ -193,10 +193,13 @@ def social_features(posts: list[dict[str, Any]], ticker: str, reddit_unavailable
         promo_hits += hits
         if hits >= 1 or len(cashtags) > 3:
             promo_noise.append(p)
-        else:
-            # mentions ticker (loosely or via cashtag), no promo signature
+        elif _is_issuer_specific(text, ticker):
+            # genuinely about THIS issuer, no promo signature
             issuer_specific.append(p)
             issuer_platforms.add(plat)
+        # else: off-ticker / irrelevant chatter — counts toward NEITHER bucket,
+        # so it can't inflate the issuer-specific burst or the cross-platform
+        # flag that feed the corroboration gate.
     sentiment_total = bullish + bearish
     bullish_ratio = round(bullish / sentiment_total, 3) if sentiment_total else None
     return {
