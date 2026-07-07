@@ -131,7 +131,8 @@ def queue_table(queue: dict[str, Any]) -> str:
             continue
         rows.append(
             f'<tr data-priority="{esc(r["review_priority"])}">'
-            f'<td class="tk"><b>{esc(r["ticker"])}</b>{ticker_links(r["ticker"])}</td>'
+            f'<td class="tk"><button class="tk-link" onclick="gotoPkg(\'{esc(r["ticker"])}\')" '
+            f'title="open evidence package">{esc(r["ticker"])}</button>{ticker_links(r["ticker"])}</td>'
             f'<td>{pill(r["review_priority"])}</td>'
             f'<td>{bar(r.get("watch_score",0))}</td>'
             f'<td>{bar(r.get("anomaly_evidence_score",0), cls="anom")}</td>'
@@ -290,25 +291,69 @@ def _pkg_drilldown(p: dict[str, Any]) -> str:
     return ("<div class='dd-wrap'>" + "".join(out) + "</div>") if out else ""
 
 
-def _pkg_label_actions(p: dict[str, Any]) -> str:
+def _pkg_label_actions(p: dict[str, Any], prior: dict | None = None) -> str:
     """Examiner action row — record an outcome label on this exact package.
-    Only rendered when the package's source file is known (so the POST can
-    target it). Posts to serve.py /api/label; degrades to a hint on file://."""
+    All five ledger labels, an optional note, and a prior-label badge so the
+    examiner sees what was already adjudicated. Posts to serve.py /api/label;
+    degrades to a hint on file://."""
     f = p.get("_source_file")
     if not f:
         return ""
-    btns = [("useful_watch", "Useful watch"), ("false_positive", "False positive"),
-            ("benign_explained", "Benign")]
+    # Full ledger taxonomy — missed_event + insufficient_evidence were CLI-only.
+    btns = [("useful_watch", "Useful watch"), ("missed_event", "Missed event"),
+            ("false_positive", "False positive"), ("benign_explained", "Benign"),
+            ("insufficient_evidence", "Insufficient")]
+    fj = esc(f)
     b = "".join(
-        f'<button class="lbl-btn" onclick="label(\'{esc(f)}\',\'{lab}\',this)">{esc(txt)}</button>'
+        f'<button class="lbl-btn" onclick="label(\'{fj}\',\'{lab}\',this)">{esc(txt)}</button>'
         for lab, txt in btns)
+    prior_html = ""
+    if prior and prior.get("label"):
+        d = (prior.get("ts") or "")[:10]
+        prior_html = (f'<span class="lbl-prior" title="already labeled">✓ labeled '
+                      f'{esc(prior["label"])}{f" on {esc(d)}" if d else ""}</span>')
+    note = (f'<input class="lbl-note" type="text" maxlength="500" '
+            f'placeholder="note (optional)" aria-label="label note for {esc(p.get("ticker",""))}">')
     return (f'<div class="lbl-actions"><span class="lbl-cap">Examiner label:</span>'
-            f'{b}<span class="lbl-status muted small"></span></div>')
+            f'{b}{note}{prior_html}<span class="lbl-status muted small"></span></div>')
+
+
+def _ledger_label_map() -> dict[tuple, dict]:
+    """Latest operator label per (ticker, source_run) so a card can show it was
+    already adjudicated — stops silent double-labeling on reload."""
+    try:
+        import ledger
+        rows = ledger.load_labels()
+    except Exception:
+        return {}
+    m: dict[tuple, dict] = {}
+    for r in rows:
+        key = (r.get("ticker"), r.get("source_run"))
+        cur = m.get(key)
+        if cur is None or r.get("ts", "") >= cur.get("ts", ""):
+            m[key] = {"label": r.get("label"), "ts": r.get("ts", "")}
+    return m
+
+
+def _pkg_ts_html(p: dict[str, Any]) -> str:
+    """Run timestamp + age for a package card, so a weeks-old package is never
+    mistaken for current. Flags >48h old as stale."""
+    ts = p.get("generated_utc") or ""
+    try:
+        dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+        secs = int((datetime.now(timezone.utc) - dt).total_seconds())
+        cls = "pkg-ts stale" if secs > 48 * 3600 else "pkg-ts"
+        tag = " · STALE" if secs > 48 * 3600 else ""
+        return f'<span class="{cls}">{dt.strftime("%Y-%m-%d %H:%MZ")} · {_fmt_age(secs)} ago{tag}</span>'
+    except Exception:
+        return ""
 
 
 def package_cards(packages: list[dict[str, Any]]) -> str:
     cards = []
+    labels = _ledger_label_map()
     for p in sorted(packages, key=lambda d: d.get("watch_score", 0), reverse=True)[:24]:
+        _prior = labels.get((p.get("ticker"), p.get("source_run_id") or p.get("generated_utc")))
         comp = p.get("component_scores", {})
         order = ["market_anomaly_score", "coordination_score", "issuer_event_score",
                  "enforcement_history_score", "market_structure_score", "halt_regulatory_score",
@@ -331,10 +376,11 @@ def package_cards(packages: list[dict[str, Any]]) -> str:
         _pri = p.get("review_priority", "LOW")
         _open = " open" if _pri in _MED_PLUS else ""  # flagged open; LOW collapsed to cut noise
         cards.append(
-            f'<details class="card pkg" data-priority="{esc(_pri)}"{_open}>'
+            f'<details id="pkg-{esc(p.get("ticker",""))}" class="card pkg" data-priority="{esc(_pri)}"{_open}>'
             f'<summary class="pkg-head"><h3>{esc(p.get("ticker"))}</h3>{pill(_pri)}'
             f'<span class="pkg-sum muted">score {p.get("watch_score",0):.0f} · anomaly '
-            f'{p.get("anomaly_evidence_score",0):.0f} · {esc(CLASS_ABBR.get(sc.get("class"), "?"))}</span></summary>'
+            f'{p.get("anomaly_evidence_score",0):.0f} · {esc(CLASS_ABBR.get(sc.get("class"), "?"))}</span>'
+            f'{_pkg_ts_html(p)}</summary>'
             f'{ticker_links(p.get("ticker",""))}'
             f'<p class="muted small">score {p.get("watch_score",0):.0f} · anomaly {p.get("anomaly_evidence_score",0):.0f} '
             f'· evidence-quality {p.get("evidence_quality_score",0):.0f} · {esc(CLASS_ABBR.get(sc.get("class"), "?"))} '
@@ -367,7 +413,7 @@ def package_cards(packages: list[dict[str, Any]]) -> str:
             + f'<p class="small adv"><b>Adversary:</b> {esc("; ".join(adv[:2]))}</p>'
             f'<p class="small rationale">{esc(p.get("non_accusatory_rationale",""))}</p>'
             + _pkg_drilldown(p)
-            + _pkg_label_actions(p)
+            + _pkg_label_actions(p, _prior)
             + '</details>')
     return "".join(cards) or '<p class="muted">No packages yet. Run scan.py.</p>'
 
@@ -1097,8 +1143,9 @@ a:focus-visible{outline:3px solid var(--brand);outline-offset:2px;border-radius:
 .nav-section{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:rgba(255,255,255,.45);padding:9px var(--s3) 4px;margin-top:var(--s2)}
 .nav-section:first-child{margin-top:0}
 .sidebar.collapsed .nav-section{display:none}
-.tab{padding:9px var(--s3);background:transparent;border:1px solid transparent;border-radius:var(--radius);cursor:pointer;font-weight:600;font-size:13.5px;color:rgba(255,255,255,.7);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;transition:background .1s,color .1s;text-align:left;width:100%}
+.tab{padding:9px var(--s3);background:transparent;border:1px solid transparent;border-radius:var(--radius);cursor:pointer;font-family:inherit;font-weight:600;font-size:13.5px;line-height:1.2;color:rgba(255,255,255,.7);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;transition:background .1s,color .1s;text-align:left;width:100%;display:block}
 .tab:hover{color:#fff;background:rgba(255,255,255,.1)}
+.tab:focus-visible{outline:2px solid #fff;outline-offset:1px}
 .tab.active{background:rgba(255,255,255,.18);color:#fff;border-color:rgba(255,255,255,.25)}
 .sidebar.collapsed .tab{padding:9px;text-align:center;font-size:0;overflow:visible}
 .sidebar.collapsed .tab::before{font-size:13px;display:block;font-weight:700;color:rgba(255,255,255,.8);line-height:1.6}
@@ -1207,6 +1254,14 @@ details.dd>summary:hover{color:var(--brand)}
 .lbl-btn:hover{background:var(--brand-light)}
 .lbl-btn:disabled{opacity:.5;cursor:default;background:var(--panel)}
 .lbl-status{margin-left:4px}
+.lbl-note{font:inherit;font-size:12px;padding:3px 8px;border:1px solid var(--line-2);border-radius:var(--radius);background:var(--bg);color:var(--ink);min-width:160px}
+.lbl-prior{font-size:11.5px;font-weight:700;color:var(--ok);background:rgba(0,128,0,.08);border-radius:3px;padding:2px 7px}
+.pkg-ts{margin-left:auto;font-size:11.5px;color:var(--faint);white-space:nowrap}
+.pkg-ts.stale{color:#b45309;font-weight:600}
+.tk-link{font:inherit;font-weight:700;color:var(--brand);background:none;border:none;padding:0;cursor:pointer;text-decoration:underline;text-underline-offset:2px}
+.tk-link:hover{color:var(--ink)}
+.pkg.flash{animation:pkgflash 1.4s ease-out}
+@keyframes pkgflash{0%{box-shadow:0 0 0 3px var(--med)}100%{box-shadow:0 0 0 0 transparent}}
 .warn{color:var(--high);font-weight:600}.adv{color:var(--brand)}.model{color:#6b48a8}.enf{color:#8b2d5e}.promo{color:var(--crit);font-weight:600}
 .si{color:#0a6b54}.si-list{margin:2px 0 6px 18px;color:var(--muted)}
 .expl{background:var(--brand-light);border-radius:var(--radius);padding:8px 10px;color:var(--ink);border:1px solid rgba(0,94,162,.15)}
@@ -1254,10 +1309,16 @@ details.dd>summary:hover{color:var(--brand)}
 
 JS = r"""
 function show(id,el){document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
-document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
-document.getElementById(id).classList.add('active');el.classList.add('active');
+document.querySelectorAll('.tab').forEach(t=>{t.classList.remove('active');t.setAttribute('aria-selected','false');});
+document.getElementById(id).classList.add('active');
+if(!el)el=document.querySelector('.tab[data-id="'+id+'"]');
+if(el){el.classList.add('active');el.setAttribute('aria-selected','true');}
 if(history.replaceState)history.replaceState(null,'','#'+id);
 if(id==='runs')loadRuns(true);}
+// Jump from the queue straight to a ticker's evidence card (open + scroll + flash).
+function gotoPkg(tk){show('packages');var c=document.getElementById('pkg-'+tk);
+if(c){c.open=true;c.scrollIntoView({behavior:'smooth',block:'start'});
+c.classList.add('flash');setTimeout(function(){c.classList.remove('flash');},1400);}}
 function filt(p){document.querySelectorAll('#overview [data-priority]').forEach(r=>{
 r.style.display=(p==='ALL'||r.getAttribute('data-priority')===p)?'':'none';});}
 function toggleNav(){
@@ -1344,14 +1405,16 @@ function rerun(failed){
 // serve.py; degrades gracefully when the dashboard is opened as a file:// (no server).
 function label(file,lbl,btn){
   var row=btn.closest('.lbl-actions'); var st=row.querySelector('.lbl-status');
+  var ni=row.querySelector('.lbl-note'); var note=ni?(ni.value||'').trim():'';
   st.textContent='saving…';
   fetch(_u('/api/label'),{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({package:file,label:lbl})})
+    body:JSON.stringify({package:file,label:lbl,note:note})})
    .then(function(r){return r.text().then(function(t){return {ok:r.ok,status:r.status,t:t};});})
    .then(function(r){
      if(r.ok){var j={};try{j=JSON.parse(r.t);}catch(e){}
-       st.textContent='✓ labeled '+(j.label||lbl)+' (ledger: '+(j.n_labels||'?')+')';
+       st.textContent='✓ labeled '+(j.label||lbl)+' (ledger: '+(j.n_labels||'?')+') — retrain on the Learning tab';
        row.querySelectorAll('.lbl-btn').forEach(function(b){b.disabled=true;});
+       if(ni)ni.disabled=true;
      }else{st.textContent='✗ '+r.t.replace(/\n/g,' ').replace(/^\d+\s*/,'').slice(0,90);}
    }).catch(function(e){st.textContent='✗ needs serve.py running (python3 serve.py)';});
 }
@@ -1396,7 +1459,10 @@ def runs_panel() -> str:
 
 
 def _tab(label: str, pid: str, active: bool = False) -> str:
-    return f'<div class="tab{" active" if active else ""}" data-id="{pid}" onclick="show(\'{pid}\',this)">{esc(label)}</div>'
+    # <button role=tab>: keyboard-focusable + Enter/Space activate natively (508).
+    return (f'<button class="tab{" active" if active else ""}" role="tab" '
+            f'aria-selected="{"true" if active else "false"}" data-id="{pid}" '
+            f'onclick="show(\'{pid}\',this)">{esc(label)}</button>')
 
 
 def _nav_section(label: str) -> str:
@@ -1509,12 +1575,21 @@ def render(out_dir: Path | None = None, out_path: Path | None = None) -> tuple[P
     out = Path(out_path) if out_path else (d / "dashboard_v2.html")
     queue = load(d / "review_queue.json", {})
     bt = load(d / "backtest_results.json", {})
-    packages = []
+    # Keep only the LATEST package per ticker — the out/ dir accumulates every
+    # historical run, so without this the examiner reviews (and could label)
+    # weeks-old evidence as if current, with duplicate tickers crowding the view.
+    by_ticker: dict[str, dict[str, Any]] = {}
     for p in sorted(d.glob("*_watch_v2.json")):
         pkg = load(p, {})
-        if pkg:
-            pkg["_source_file"] = p.name  # so a card can label this exact package
-            packages.append(pkg)
+        if not pkg:
+            continue
+        pkg["_source_file"] = p.name  # so a card can label this exact package
+        tk = pkg.get("ticker")
+        ts = pkg.get("generated_utc") or ""
+        prev = by_ticker.get(tk)
+        if prev is None or ts >= (prev.get("generated_utc") or ""):
+            by_ticker[tk] = pkg
+    packages = list(by_ticker.values())
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(build_html(queue, packages, bt))
     return out, {"queue_rows": len(queue.get("review_queue", [])),
