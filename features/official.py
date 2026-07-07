@@ -7,7 +7,14 @@ All official data is CONTEXT for review, never proof.
 """
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 from typing import Any
+
+# Only filings within this window light the issuer-event family. Without it,
+# nearly any active filer scores issuer_context >= 30 from a year of "recent"
+# forms, handing every ticker a near-free second corroborating family and
+# collapsing the >=2-family HIGH/CRITICAL gate to effectively one.
+_ISSUER_RECENCY_DAYS = 90
 
 
 def _records(fetch_data: Any) -> list[dict]:
@@ -52,9 +59,16 @@ def official_context(ticker: str, otc_threshold: Any, reg_sho: Any, halts: Any,
         recent = (((submissions.get("filings") or {}).get("recent")) or {})
         forms = recent.get("form") or []
         dates = recent.get("filingDate") or []
+        cutoff = datetime.now(timezone.utc) - timedelta(days=_ISSUER_RECENCY_DAYS)
         flagged = []
         for f, d in zip(forms, dates):
             if f in {"3", "4", "5", "8-K", "S-1", "S-3", "424B5", "424B4", "EFFECT", "144"}:
+                try:
+                    fd = datetime.fromisoformat(str(d)).replace(tzinfo=timezone.utc)
+                    if fd < cutoff:
+                        continue  # too old to count as a current issuer event
+                except Exception:
+                    pass  # unparseable date: keep (conservative)
                 flagged.append({"form": f, "date": d})
         if flagged:
             fam["sec_recent_forms"] = flagged[:25]

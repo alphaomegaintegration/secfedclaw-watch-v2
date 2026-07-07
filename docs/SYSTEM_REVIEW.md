@@ -117,11 +117,19 @@ content-cluster merge + a gated `entity_recurrence_score`) make it *smart* once 
 
 | Wave | Theme | Risk | Changes scores? | Status |
 |---|---|---|---|---|
-| **1** | Reliability & integrity + PII scrub | Low | No | **Done** |
-| **2** | Entity resolution + UI (persist → store → backfill → Entities tab) | Med | Adds only | Planned |
-| **3** | Scoring correctness (issuer-specific wire, 90-day recency gate, monotonic map, Reddit RSS parse) | Med-High | **Yes — re-baseline backtest** | Planned |
-| **4** | HCD loop (queue↔evidence links, package timestamps + latest-per-ticker, finish labeling, Network re-theme, keyboard nav, post-run reload banner) | Low-Med | No | Planned |
-| **5** | De-circularize validation + real probability calibration; split `dashboard_v2.py` into panel modules; unify `out/` path; decouple `edgar_pipeline`/`CIK_MAP` | High | Yes | Planned |
+| **1** | Reliability & integrity + PII scrub | Low | No | **Done** (#40) |
+| **2** | Entity resolution + UI (persist → store → backfill → Entities tab) | Med | Adds only | **Done** (#41) |
+| **3** | Scoring correctness (issuer-specific wire, 90-day recency gate, monotonic map) | Med-High | **Yes — re-baselined** | **Done** |
+| **4** | HCD loop (queue↔evidence links, latest-per-ticker + timestamps, finish labeling, keyboard nav) | Low-Med | No | **Done** (#42) |
+| **5** | De-circularize validation **(done)**; real probability calibration, split `dashboard_v2.py`, unify `out/` path, decouple `edgar_pipeline`/`CIK_MAP`, Reddit RSS parse | High | Yes | **Partial** |
+
+### Wave 3 — delivered (with the Wave-5 backtest de-circularization it depends on)
+- **De-circularized the backtest first** (Wave-5 dependency): synthetic pump text no longer reuses the detector's `PROMO_TERMS` — coordinated pumps are near-duplicate scripts in an independent vocabulary, so detection must rest on coordination *structure* + market double-confirmation. Honest re-baseline result: **recall stays 1.000** even without lexicon overlap (detection isn't just wordlist memorization), and **thin-microcap precision improved 0.31 → 0.40** with no recall loss.
+- **Wired the dead `_is_issuer_specific`** — off-ticker / irrelevant chatter no longer counts toward the issuer-specific burst or the cross-platform flag that feed corroboration.
+- **90-day issuer recency gate** (`_ISSUER_RECENCY_DAYS`) — a stale filing no longer lights a near-free second family; the ≥2-family HIGH/CRITICAL gate is meaningful again.
+- **Monotonic market map** — `min(score,100)`; the ≤100 band region is unchanged, extreme raw scores saturate at 100 instead of folding back below weaker ones.
+
+**Still open (Wave 5 remainder):** real probability calibration (Platt/isotonic + real-only/temporal CV), `dashboard_v2.py` panel split, unified `out/` path, `edgar_pipeline`/`CIK_MAP` decouple, Reddit RSS parsing into posts.
 
 ### Wave 1 — delivered
 - `io_util.atomic_write` (temp + `os.replace`) applied to `review_queue.json`, `model.json`,
