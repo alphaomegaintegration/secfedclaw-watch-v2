@@ -147,7 +147,11 @@ class DataConnector:
                          backoff=getattr(self, "_http_backoff", 0.5),
                          retry_on=(urllib.error.URLError, TimeoutError))
         except Exception:
-            self._live_ok = False
+            # A transient failure on ONE source must not poison the whole run.
+            # Only live_available()'s Polygon probe governs the global _live_ok
+            # (it reads this method's status directly); an individual source that
+            # fails here just returns (None, None) and falls back to its own
+            # replay, leaving other live sources untouched.
             return None, None
 
     def live_available(self) -> bool:
@@ -523,7 +527,7 @@ class DataConnector:
         ticker = ticker.upper()
         if self.prefer_live:
             url = f"https://www.otcmarkets.com/research/stock-promoters/api/search?symbol={ticker}"
-            ua = self.env.get("SEC_USER_AGENT", "secfedclaw research")
+            ua = self.env.get("SEC_USER_AGENT", "secfedclaw-watch/2.0 (configure SEC_USER_AGENT with your contact email)")
             status, data = self._http_json(url, {"User-Agent": ua, "Accept": "application/json"})
             if status == 200 and data:
                 return self._live(f"otc_promo_{ticker}", status, data, url,
@@ -566,8 +570,8 @@ class DataConnector:
     # ---- MyFXBook community sentiment ------------------------------------
     def myfxbook_community(self, ticker: str) -> Fetch:
         """MyFXBook trading community sentiment and watchlist signals.
-        Account: robert.david.brown@gmail.com / profile browngeek666.
-        Uses Firecrawl to access community pages; falls back to replay."""
+        Uses the scrape provider to access public community pages; falls back to
+        replay. Any account credentials come from .env, never hardcoded here."""
         ticker = ticker.upper()
         if self.prefer_live:
             # Community outlook/sentiment page — publicly accessible
@@ -582,7 +586,7 @@ class DataConnector:
 
     # ---- official/regulatory sources ------------------------------------
     def sec_submissions(self, cik10: str) -> Fetch:
-        ua = self.env.get("SEC_USER_AGENT", "secfedclaw research robert.david.brown@gmail.com")
+        ua = self.env.get("SEC_USER_AGENT", "secfedclaw-watch/2.0 (configure SEC_USER_AGENT with your contact email)")
         if self.prefer_live and self.live_available_sec(ua):
             url = f"https://data.sec.gov/submissions/CIK{cik10}.json"
             status, data = self._http_json(url, {"User-Agent": ua})
@@ -617,7 +621,7 @@ class DataConnector:
 
     def sec_litigation_releases(self) -> Fetch:
         """SEC litigation + admin-proceeding feeds (enforcement history). No key needed."""
-        ua = self.env.get("SEC_USER_AGENT", "secfedclaw research robert.david.brown@gmail.com")
+        ua = self.env.get("SEC_USER_AGENT", "secfedclaw-watch/2.0 (configure SEC_USER_AGENT with your contact email)")
         if self.prefer_live and self.live_available_sec(ua):
             # litigation releases (correct URL — /litigation/ not /rss/litigation/)
             for url in ("https://www.sec.gov/litigation/litreleases.xml",
@@ -631,7 +635,7 @@ class DataConnector:
     # ---- EDGAR daily-diff pipeline sources ------------------------------
     def sec_daily_index(self, day: str) -> Fetch:
         """SEC daily-index master file (pipe-delimited) for a YYYY-MM-DD day."""
-        ua = self.env.get("SEC_USER_AGENT", "secfedclaw research robert.david.brown@gmail.com")
+        ua = self.env.get("SEC_USER_AGENT", "secfedclaw-watch/2.0 (configure SEC_USER_AGENT with your contact email)")
         y, m, d = day.split("-")
         q = (int(m) - 1) // 3 + 1
         url = f"https://www.sec.gov/Archives/edgar/daily-index/{y}/QTR{q}/master.{y}{m}{d}.idx"
@@ -644,7 +648,7 @@ class DataConnector:
                             "*sec_daily_index*", note="cached daily index (if present)")
 
     def sec_company_tickers(self) -> Fetch:
-        ua = self.env.get("SEC_USER_AGENT", "secfedclaw research robert.david.brown@gmail.com")
+        ua = self.env.get("SEC_USER_AGENT", "secfedclaw-watch/2.0 (configure SEC_USER_AGENT with your contact email)")
         if self.live_available_sec(ua):
             status, data = self._http_json("https://www.sec.gov/files/company_tickers.json",
                                            {"User-Agent": ua})
@@ -675,11 +679,21 @@ class DataConnector:
         return status == 200
 
     def _http_text(self, url: str, headers: dict[str, str] | None = None) -> tuple[int | None, Any]:
-        try:
+        # Parity with _http_json: per-host rate limit + transient-only retry.
+        # This path carries SEC daily-index/litigation, Nasdaq halts, Reg SHO
+        # and Reddit RSS — surveillance-critical feeds that were previously hit
+        # with no throttle (SEC fair-access risk) and no retry (any blip → replay).
+        def _once() -> tuple[int | None, Any]:
+            _limiter_for(url).acquire()
             req = urllib.request.Request(url, headers=headers or {})
-            with urllib.request.urlopen(req, timeout=self.timeout) as r:
-                return r.status, r.read().decode("utf-8", "replace")
-        except urllib.error.HTTPError as e:
-            return e.code, None
+            try:
+                with urllib.request.urlopen(req, timeout=self.timeout) as r:
+                    return r.status, r.read().decode("utf-8", "replace")
+            except urllib.error.HTTPError as e:
+                return e.code, None  # definitive status — do not retry
+        try:
+            return retry(_once, attempts=getattr(self, "_http_attempts", 3),
+                         backoff=getattr(self, "_http_backoff", 0.5),
+                         retry_on=(urllib.error.URLError, TimeoutError))
         except Exception:
             return None, None

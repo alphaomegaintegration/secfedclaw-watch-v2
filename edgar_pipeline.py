@@ -35,6 +35,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from connectors import DataConnector  # noqa: E402
 from config import DEFAULT_UNIVERSE  # noqa: E402
 from features import edgar  # noqa: E402
+from io_util import atomic_write
 
 PKG = Path(__file__).resolve().parent
 STATE_PATH = PKG / "state" / "edgar_state.json"
@@ -54,7 +55,7 @@ def _save_state(state: dict[str, Any]) -> None:
     STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
     # cap stored accessions/history so state cannot grow unbounded
     state["seen_accessions"] = state.get("seen_accessions", [])[-50000:]
-    STATE_PATH.write_text(json.dumps(state, indent=2, default=str) + "\n")
+    atomic_write(STATE_PATH, json.dumps(state, indent=2, default=str) + "\n")
 
 
 def _business_days(since: str | None, until: date, max_days: int) -> list[str]:
@@ -148,7 +149,7 @@ def run(tickers: list[str], max_days: int = 5, prefer_live: bool = True) -> dict
             "limitation": "WATCH-level issuer context; SEC filings are official records, not proof of misconduct.",
         }
         path = OUT_DIR / f"issuer_features_{ticker}.json"
-        path.write_text(json.dumps(payload, indent=2, default=str) + "\n")
+        atomic_write(path, json.dumps(payload, indent=2, default=str) + "\n")
         written.append({"ticker": ticker, "issuer_event_score": round(score, 2), "path": str(path)})
 
     state.update({
