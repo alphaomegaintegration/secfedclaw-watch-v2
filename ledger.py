@@ -25,12 +25,15 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from model import feature_vector  # noqa: E402
+import threading
 
 LEDGER_PATH = Path(__file__).resolve().parent / "out" / "ledger" / "labels.jsonl"
 POSITIVE = {"useful_watch", "missed_event"}
 NEGATIVE = {"false_positive", "benign_explained", "insufficient_evidence"}
 VALID = POSITIVE | NEGATIVE
 
+
+_APPEND_LOCK = threading.Lock()  # serialize JSONL appends (threaded serve.py)
 
 def label_to_y(label: str) -> int | None:
     if label in POSITIVE:
@@ -54,8 +57,9 @@ def add_label(package: dict[str, Any], label: str, note: str = "",
         "review_priority": package.get("review_priority"),
         "features": feature_vector(package),
     }
-    with p.open("a") as f:
-        f.write(json.dumps(row, default=str) + "\n")
+    with _APPEND_LOCK:
+        with p.open("a") as f:
+            f.write(json.dumps(row, default=str) + "\n")
     return row
 
 

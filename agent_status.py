@@ -13,6 +13,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from io_util import atomic_write
 
 HERE = Path(__file__).resolve().parent
 OUT = HERE / "out"
@@ -201,7 +202,7 @@ def build(queue: dict[str, Any] | None = None) -> dict[str, Any]:
 def main() -> int:
     OUT.mkdir(parents=True, exist_ok=True)
     st = build()
-    (OUT / "agent_status.json").write_text(json.dumps(st, indent=2, default=str) + "\n")
+    atomic_write(OUT / "agent_status.json", json.dumps(st, indent=2, default=str) + "\n")
     print(json.dumps(st, indent=2, default=str))
     return 0
 

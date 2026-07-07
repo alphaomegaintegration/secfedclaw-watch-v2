@@ -32,6 +32,7 @@ from config import DEFAULT_UNIVERSE, ALGORITHM_VERSION, FINDING_CEILING  # noqa:
 from connectors import DataConnector  # noqa: E402
 from agents import Orchestrator  # noqa: E402
 from concurrency import run_concurrent  # noqa: E402
+from io_util import atomic_write
 
 DEFAULT_WORKERS = 6  # ticker-level fan-out (Phase 0.1); each ticker still fans out its own fetches
 
@@ -148,7 +149,7 @@ def run_scan(universe: list[str], *, prefer_live: bool, out_dir: Path | str | No
         "review_queue": results,
         "guardrails": "WATCH-only review priorities. Not trading signals or proof of misconduct.",
     }
-    (out_dir / "review_queue.json").write_text(json.dumps(queue, indent=2, default=str) + "\n")
+    atomic_write(out_dir / "review_queue.json", json.dumps(queue, indent=2, default=str) + "\n")
     manifest["finished_utc"] = _iso_utc()
     _write_manifest()
     return queue

@@ -25,6 +25,7 @@ import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
+from io_util import atomic_write
 
 HERE = Path(__file__).resolve().parent
 OUT = HERE / "out"
@@ -167,7 +168,7 @@ def run(no_live: bool, tickers: list[str], discover: int) -> dict:
             except Exception as e:
                 _log(fh, f"OSINT workflow error (non-fatal): {e}")
 
-    SUMMARY.write_text(json.dumps(summary, indent=2, default=str) + "\n")
+    atomic_write(SUMMARY, json.dumps(summary, indent=2, default=str) + "\n")
     return summary
 
 

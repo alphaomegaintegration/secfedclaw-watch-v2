@@ -18,6 +18,7 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+import threading
 
 USAGE_DIR = Path(__file__).resolve().parent / "out" / "usage"
 LEDGER = USAGE_DIR / "llm_usage.jsonl"
@@ -43,6 +44,8 @@ DEFAULT_PRICING: dict[str, tuple[float, float]] = {
     "local": (0.0, 0.0),
 }
 
+
+_APPEND_LOCK = threading.Lock()  # serialize JSONL appends (threaded serve.py)
 
 def _pricing() -> dict[str, tuple[float, float]]:
     p = dict(DEFAULT_PRICING)
@@ -92,8 +95,9 @@ def record(model: str, input_tokens: int, output_tokens: int, component: str = "
         "cost_usd": cost(model, input_tokens, output_tokens), "pricing_known": known,
         "meta": meta or {},
     }
-    with p.open("a") as f:
-        f.write(json.dumps(row, default=str) + "\n")
+    with _APPEND_LOCK:
+        with p.open("a") as f:
+            f.write(json.dumps(row, default=str) + "\n")
     return row
 
 

@@ -24,6 +24,7 @@ import model as M
 import ledger as L
 import scoring_v2
 import backtest
+from io_util import atomic_write
 
 
 def _bootstrap_samples(n_per_class: int, seed: int):
@@ -106,14 +107,14 @@ def main() -> int:
         meta.update({"abstain": True,
                      "reason": f"insufficient labeled two-class data "
                                f"(have {len(y)}; need >= {M.MIN_LABELS}, >= {M.MIN_PER_CLASS}/class)"})
-        out.write_text(json.dumps(meta, indent=2) + "\n")
+        atomic_write(out, json.dumps(meta, indent=2) + "\n")
         print(json.dumps({"abstain": True, **{k: meta[k] for k in ("n_total", "n_real_labels", "reason")}}, indent=2))
         return 0
 
     cv_auc = M.kfold_auc(X, y, k=5)
     gbm = M.GradientBoosting().fit(X, y)
     full = {**meta, "abstain": False, "cv_auc": round(cv_auc, 4), **gbm.to_dict()}
-    out.write_text(json.dumps(full, indent=2) + "\n")
+    atomic_write(out, json.dumps(full, indent=2) + "\n")
     imp = sorted(zip(M.FEATURE_NAMES, gbm.importances), key=lambda t: -t[1])[:6]
     print(f"\nSECFEDCLAW review-priority GBM trained — n={len(y)} "
           f"(real={len(yr)}, bootstrap={len(yb)}), 5-fold AUC={cv_auc:.3f}")
