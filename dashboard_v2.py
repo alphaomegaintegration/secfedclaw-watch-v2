@@ -243,6 +243,23 @@ def _pkg_drilldown(p: dict[str, Any]) -> str:
             b += "<p class='small muted'>Shared domains:</p><ul class='small dd-list'>" + "".join(
                 f"<li>{esc(str(g))}</li>" for g in domains[:8]) + "</ul>"
         out.append(_dd("Coordination evidence", len(clusters) or len(basis), b))
+    # Cross-run entity recurrence — same domains/clusters/accounts on OTHER tickers.
+    try:
+        import entities as _ent
+        rec = _ent.recurrence_for_package(p)
+    except Exception:
+        rec = []
+    if rec:
+        rows = "".join(
+            f"<li><b>{esc(r['type'].replace('_',' '))}</b> "
+            f"<span class='mono'>{esc(r['label'][:40])}</span> — also seen on "
+            f"<b>{esc(', '.join(r['also_seen_on'][:8]))}</b> "
+            f"({r['n_tickers']} tickers · {r['span_days']}d)</li>"
+            for r in rec[:8])
+        out.append(_dd("Cross-ticker recurrence", len(rec),
+                       "<ul class='small dd-list'>" + rows + "</ul>"
+                       "<p class='small muted'>The same actor/script seen on other tickers. "
+                       "Backward-looking WATCH context for review — not proof of misconduct.</p>"))
     # Market anomaly basis (the z-scores behind the market score).
     md = p.get("market_detail") or {}
     ab = md.get("anomaly_basis") or []
@@ -691,6 +708,48 @@ def learning_panel() -> str:
         'The model is a calibration aid for human triage, nothing more.</p></div>')
 
 
+def entities_panel() -> str:
+    """Cross-run entity resolution: recurring promoter domains / accounts /
+    content-cluster scripts and their cross-ticker footprint."""
+    try:
+        import entities as _ent
+        s = _ent.summary()
+        rows = _ent.recurring(min_tickers=2)
+    except Exception:
+        return "<p class='intro'>Entity store unavailable — run a scan or <code>python3 entities.py --rebuild</code>.</p>"
+    intro = ('<p class="intro">Cross-run <b>entity resolution</b>: the same promoter domains, '
+             'accounts, and near-duplicate promotional <b>scripts</b> recurring across tickers '
+             'and time — the actor-level view pump-and-dump detection hinges on. Recurrence is '
+             'backward-looking WATCH context for human review, never proof of misconduct.</p>')
+    kpis = "".join(
+        f'<div class="kpi"><div class="kpi-num">{esc(v)}</div><div class="kpi-lbl">{esc(l)}</div></div>'
+        for l, v in [("Entities tracked", s["n_entities"]),
+                     ("Recurring (≥2 tickers)", s["n_recurring"]),
+                     ("Promoter domains", s["by_type"].get("domain", 0)),
+                     ("Content-cluster scripts", s["by_type"].get("content_cluster", 0))])
+    if not rows:
+        table = ('<div class="card"><h3>No recurring entities yet</h3>'
+                 '<p class="small muted">An entity must appear on ≥2 distinct tickers to recur. '
+                 'Run more scans (or <code>python3 entities.py --rebuild</code>) to accrue history. '
+                 'Content-cluster + account recurrence populates as new scans persist the author '
+                 'and content-fingerprint identity fields.</p></div>')
+    else:
+        trs = "".join(
+            f"<tr><td>{esc(r['type'].replace('_', ' '))}</td>"
+            f"<td class='mono small'>{esc(r['label'][:56])}</td>"
+            f"<td class='num'>{r['n_tickers']}</td><td class='num'>{r['span_days']}d</td>"
+            f"<td class='small'>{esc(', '.join(r['tickers'][:10]))}</td></tr>"
+            for r in rows[:60])
+        table = ('<div class="card"><h3>Recurring entities across the watch</h3>'
+                 '<table class="mini"><thead><tr><th>type</th><th>identity</th>'
+                 '<th class="num">tickers</th><th class="num">span</th><th>seen on</th></tr></thead>'
+                 f'<tbody>{trs}</tbody></table>'
+                 '<p class="small muted">Ubiquitous platform / link-shortener domains are excluded '
+                 'so only genuine shared promoter infrastructure surfaces. Same identity on more '
+                 'tickers over a longer span = a stronger recurrence signal.</p></div>')
+    return intro + f'<div class="kpis">{kpis}</div>' + table
+
+
 def network_graph_panel(packages: list[dict[str, Any]]) -> str:
     """Build coordination network graph data from packages for force-directed viz."""
     nodes: dict[str, dict] = {}
@@ -1046,6 +1105,7 @@ a:focus-visible{outline:3px solid var(--brand);outline-offset:2px;border-radius:
 .sidebar.collapsed .tab[data-id="overview"]::before{content:"O"}
 .sidebar.collapsed .tab[data-id="packages"]::before{content:"P"}
 .sidebar.collapsed .tab[data-id="network"]::before{content:"N"}
+.sidebar.collapsed .tab[data-id="entities"]::before{content:"E"}
 .sidebar.collapsed .tab[data-id="howitworks"]::before{content:"?"}
 .sidebar.collapsed .tab[data-id="agents"]::before{content:"A"}
 .sidebar.collapsed .tab[data-id="learning"]::before{content:"L"}
@@ -1355,7 +1415,8 @@ def build_html(queue: dict, packages: list, bt: dict) -> str:
     tabs = (
         _nav_section("Review")
         + _tab("Overview", "overview", True) + _tab("Packages", "packages")
-        + _tab("Agents", "agents") + _tab("Network", "network") + _tab("Backtest", "backtest")
+        + _tab("Agents", "agents") + _tab("Network", "network")
+        + _tab("Entities", "entities") + _tab("Backtest", "backtest")
         + _nav_section("Operations")
         + _tab("Status", "status") + _tab("Runs", "runs")
         + _tab("Learning", "learning") + _tab("LLM cost", "llm")
@@ -1413,6 +1474,7 @@ def build_html(queue: dict, packages: list, bt: dict) -> str:
         "clusters, the adversary's caveats, the optional model advisory, and a non-accusatory rationale.</p>"
         f"{package_cards([p for p in packages if p])}</section>"
         # network graph
+        f"<section id='entities' class='panel'><h2>Entities &amp; recurrence</h2>{entities_panel()}</section>"
         f"<section id='network' class='panel'><h2>Coordination network</h2>"
         f"{network_graph_panel([p for p in packages if p])}</section>"
         # how it works

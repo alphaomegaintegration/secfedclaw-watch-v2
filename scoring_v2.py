@@ -453,7 +453,10 @@ def build_package(ticker: str, fetches: dict[str, Any]) -> dict[str, Any]:
         "coordination_detail": {"basis": coord_basis,
                                  "near_duplicate_clusters": coord_feat.get("near_duplicate_clusters", []),
                                  "shared_domain_groups": coord_feat.get("shared_domain_groups", []),
-                                 "max_posts_in_burst": coord_feat.get("max_posts_in_burst", 0)},
+                                 "max_posts_in_burst": coord_feat.get("max_posts_in_burst", 0),
+                                 # Identity fields for cross-run entity resolution (entities.py).
+                                 "author_concentration_hhi": coord_feat.get("author_concentration_hhi", 0.0),
+                                 "unique_authors": coord_feat.get("unique_authors", 0)},
         # Phase 2: null unless SECFEDCLAW_SOCIAL_INTEL=1 (cross-platform push intel).
         "social_intel": social_intel_detail,
         "official_context_families": sorted(ctx.get("families", {}).keys()),

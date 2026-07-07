@@ -16,6 +16,7 @@ misconduct on its own.
 """
 from __future__ import annotations
 
+import hashlib
 import re
 from collections import Counter, defaultdict
 from datetime import datetime
@@ -36,6 +37,17 @@ def _shingles(tokens: list[str], k: int = 3) -> set[str]:
     if len(tokens) < k:
         return {" ".join(tokens)} if tokens else set()
     return {" ".join(tokens[i:i + k]) for i in range(len(tokens) - k + 1)}
+
+
+def content_fingerprint(text: str) -> str:
+    """Stable short hash of a message's normalized 3-shingle SET, so the same
+    promotional script recurring across tickers/runs produces the same id even
+    under different post ids/handles. Exact-set match (v1); fuzzy MinHash linking
+    is a later step. Empty only for empty/whitespace text."""
+    sh = sorted(_shingles(_norm_tokens(text)))
+    if not sh:
+        return ""
+    return hashlib.sha1(" | ".join(sh).encode()).hexdigest()[:16]
 
 
 def _jaccard(a: set[str], b: set[str]) -> float:
@@ -86,10 +98,14 @@ def coordination_features(posts: list[dict[str, Any]], dup_threshold: float = 0.
         clusters[find(idx)].append(idx)
     dup_clusters = [members for members in clusters.values() if len(members) >= 2]
     for members in dup_clusters:
+        member_authors = sorted({posts[m].get("author_id") for m in members if posts[m].get("author_id")})
         out["near_duplicate_clusters"].append({
             "size": len(members),
             "post_ids": [posts[m].get("id") for m in members][:20],
             "sample_text": texts[members[0]][:160],
+            # Identity fields for cross-run entity resolution (entities.py):
+            "author_ids": member_authors[:20],
+            "content_fingerprint": content_fingerprint(texts[members[0]]),
         })
     out["max_duplicate_cluster_size"] = max((len(m) for m in dup_clusters), default=0)
     out["duplicate_post_ratio"] = round(
