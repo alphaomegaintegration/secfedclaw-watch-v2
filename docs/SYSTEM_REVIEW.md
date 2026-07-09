@@ -121,7 +121,7 @@ content-cluster merge + a gated `entity_recurrence_score`) make it *smart* once 
 | **2** | Entity resolution + UI (persist → store → backfill → Entities tab) | Med | Adds only | **Done** (#41) |
 | **3** | Scoring correctness (issuer-specific wire, 90-day recency gate, monotonic map) | Med-High | **Yes — re-baselined** | **Done** |
 | **4** | HCD loop (queue↔evidence links, latest-per-ticker + timestamps, finish labeling, keyboard nav) | Low-Med | No | **Done** (#42) |
-| **5** | De-circularize validation **(done)**; real probability calibration, split `dashboard_v2.py`, unify `out/` path, decouple `edgar_pipeline`/`CIK_MAP`, Reddit RSS parse | High | Yes | **Partial** |
+| **5** | De-circularize validation **(done)**; real probability calibration, split `dashboard_v2.py`, unify `out/` path, decouple `edgar_pipeline`/`CIK_MAP`, Reddit RSS parse | High | Yes | **Done** |
 
 ### Wave 3 — delivered (with the Wave-5 backtest de-circularization it depends on)
 - **De-circularized the backtest first** (Wave-5 dependency): synthetic pump text no longer reuses the detector's `PROMO_TERMS` — coordinated pumps are near-duplicate scripts in an independent vocabulary, so detection must rest on coordination *structure* + market double-confirmation. Honest re-baseline result: **recall stays 1.000** even without lexicon overlap (detection isn't just wordlist memorization), and **thin-microcap precision improved 0.31 → 0.40** with no recall loss.
@@ -131,7 +131,7 @@ content-cluster merge + a gated `entity_recurrence_score`) make it *smart* once 
 
 **Wave 5 — delivered so far:** backtest de-circularization (above); **unified `out/` path** (`config.output_root()` + `SECFEDCLAW_OUT_DIR`, applied across all 9 modules — fixes the `scan.py --out` desync); **decoupled `CIK_MAP`** into a thread-safe `cik_registry.py` (breaks the `edgar_pipeline`→`agents` import cycle, adds the missing load lock).
 
-**Wave 5 — remaining:** the `dashboard_v2.py` god-file was reduced 1619 → 1282 lines by extracting the CSS/JS assets into `dashboard_assets.py` (verified by byte-identical render). A deeper decomposition of the panel *functions* into per-panel modules remains as an optional future refactor. (Reddit RSS parsing, probability calibration: done.)
+**Wave 5 — complete.** De-circularized backtest; unified `output_root()`; thread-safe `cik_registry` (cycle broken); Reddit RSS parsing; honest Platt calibration; and the `dashboard_v2.py` god-file fully decomposed — CSS/JS → `dashboard_assets.py`, shared helpers → `dashboard_common.py`, panel renderers → `dashboard_panels.py`, leaving `dashboard_v2.py` a 156-line orchestrator (from 1619). Every step verified behavior-preserving.
 
 ### Wave 1 — delivered
 - `io_util.atomic_write` (temp + `os.replace`) applied to `review_queue.json`, `model.json`,
