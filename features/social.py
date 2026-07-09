@@ -14,8 +14,41 @@ Upgrades over v0.1:
 """
 from __future__ import annotations
 
+import html
 import re
 from typing import Any
+
+
+def _parse_reddit_rss(xml: str) -> list[dict[str, Any]]:
+    """Parse a Reddit search.rss (Atom) feed into the shared post schema.
+    Namespace-agnostic (regex) so it survives Atom's default-namespace prefixes.
+    Pulls href URLs out of the HTML content into the text so shared-domain
+    coordination detection still sees them."""
+    out: list[dict[str, Any]] = []
+    for ent in re.findall(r"<entry\b.*?</entry>", xml, re.S):
+        def grab(tag: str) -> str:
+            m = re.search(rf"<{tag}\b[^>]*>(.*?)</{tag}>", ent, re.S)
+            return m.group(1).strip() if m else ""
+        title = html.unescape(grab("title"))
+        content_raw = grab("content")
+        hrefs = re.findall(r'href="(https?://[^"]+)"', content_raw)
+        content = html.unescape(re.sub(r"<[^>]+>", " ", content_raw))
+        author = grab("name").lstrip("/")
+        if author.startswith("u/"):
+            author = author[2:]
+        eid = grab("id")
+        text = " ".join(t for t in [title, content, *hrefs] if t).strip()
+        if not text:
+            continue
+        out.append({
+            "platform": "reddit",
+            "id": eid or f"{author}:{title[:24]}",
+            "text": text,
+            "created_at": grab("updated") or None,
+            "author_id": author or None,
+            "engagement": 0.0,
+        })
+    return out
 
 PROMO_TERMS = {
     "guaranteed", "risk-free", "risk free", "100%", "moon", "mooning", "squeeze",
@@ -66,6 +99,12 @@ def normalize_posts(x_fetch_data: Any, reddit_fetch_data: Any = None,
                 "sentiment": basic if basic in ("bullish", "bearish") else None,
                 "engagement": float((m.get("likes") or {}).get("total", 0)) if isinstance(m.get("likes"), dict) else 0.0,
             })
+    # Reddit RSS (Atom) — the connector's most-reliable path returns the feed as
+    # a STRING. Previously only the dict path was handled, so RSS success yielded
+    # zero posts while reddit_unavailable stayed False (silently fictional
+    # coverage). Parse the Atom entries into the shared post schema.
+    if isinstance(reddit_fetch_data, str) and "<entry" in reddit_fetch_data:
+        posts.extend(_parse_reddit_rss(reddit_fetch_data))
     if isinstance(reddit_fetch_data, dict):
         children = (((reddit_fetch_data.get("data") or {}).get("children")) or []) \
             if "data" in reddit_fetch_data else (reddit_fetch_data.get("posts") or [])

@@ -78,3 +78,35 @@ class TestBacktestDecircularized(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class TestRedditRSSCoverage(unittest.TestCase):
+    """Reddit RSS (a string) must parse into posts — it silently yielded zero."""
+    RSS = """<?xml version="1.0"?><feed xmlns="http://www.w3.org/2005/Atom">
+    <title>reddit feed</title><id>feedid</id>
+    <entry><author><name>/u/pumpguy</name></author>
+      <content type="html">&lt;p&gt;$ACME is lining up https://promo.biz/x&lt;/p&gt;</content>
+      <id>t3_abc</id><updated>2026-07-01T12:00:00+00:00</updated>
+      <title>$ACME thread</title></entry>
+    <entry><author><name>/u/other</name></author>
+      <content type="html">just some chatter</content>
+      <id>t3_def</id><updated>2026-07-01T12:05:00+00:00</updated>
+      <title>random</title></entry>
+    </feed>"""
+
+    def test_rss_parsed_into_posts(self):
+        from features.social import _parse_reddit_rss
+        posts = _parse_reddit_rss(self.RSS)
+        self.assertEqual(len(posts), 2)                      # feed-level title/id NOT counted
+        p = posts[0]
+        self.assertEqual(p["platform"], "reddit")
+        self.assertEqual(p["author_id"], "pumpguy")          # /u/ stripped
+        self.assertEqual(p["id"], "t3_abc")
+        self.assertIn("$ACME", p["text"])
+        self.assertIn("https://promo.biz/x", p["text"])      # href preserved for domain detection
+
+    def test_normalize_posts_accepts_rss_string(self):
+        from features.social import normalize_posts
+        posts = normalize_posts(None, reddit_fetch_data=self.RSS)
+        reddit = [p for p in posts if p["platform"] == "reddit"]
+        self.assertEqual(len(reddit), 2)                     # was 0 before the fix
