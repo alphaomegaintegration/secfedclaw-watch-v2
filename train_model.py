@@ -100,7 +100,7 @@ def main() -> int:
         "feature_names": M.FEATURE_NAMES,
         "n_total": len(y), "n_real_labels": len(yr), "n_bootstrap": len(yb),
         "n_positive": n_pos, "n_negative": n_neg,
-        "guardrail": "Advisory calibrated review-priority probability only; not a guilt/fraud label or trading signal.",
+        "guardrail": "Advisory review-priority probability only; not a guilt/fraud label or trading signal.",
     }
 
     if len(y) < M.MIN_LABELS or n_pos < M.MIN_PER_CLASS or n_neg < M.MIN_PER_CLASS:
@@ -112,8 +112,15 @@ def main() -> int:
         return 0
 
     cv_auc = M.kfold_auc(X, y, k=5)
-    gbm = M.GradientBoosting().fit(X, y)
-    full = {**meta, "abstain": False, "cv_auc": round(cv_auc, 4), **gbm.to_dict()}
+    gbm = M.GradientBoosting().fit(X, y)          # full-strength model on all data
+    # Honest Platt calibration: fit the (a,b) scaler on OUT-OF-FOLD decision
+    # scores (rows the model didn't train on), not the training rows themselves.
+    oof, got = M.kfold_oof_decision(X, y, k=5)
+    import numpy as _np
+    if got.any():
+        gbm.set_platt_from_scores(oof[got], _np.asarray(y)[got])
+    full = {**meta, "abstain": False, "cv_auc": round(cv_auc, 4),
+            "calibrated": gbm.platt is not None, **gbm.to_dict()}
     atomic_write(out, json.dumps(full, indent=2) + "\n")
     imp = sorted(zip(M.FEATURE_NAMES, gbm.importances), key=lambda t: -t[1])[:6]
     print(f"\nSECFEDCLAW review-priority GBM trained — n={len(y)} "
