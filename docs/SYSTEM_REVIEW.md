@@ -131,7 +131,7 @@ content-cluster merge + a gated `entity_recurrence_score`) make it *smart* once 
 
 **Wave 5 — delivered so far:** backtest de-circularization (above); **unified `out/` path** (`config.output_root()` + `SECFEDCLAW_OUT_DIR`, applied across all 9 modules — fixes the `scan.py --out` desync); **decoupled `CIK_MAP`** into a thread-safe `cik_registry.py` (breaks the `edgar_pipeline`→`agents` import cycle, adds the missing load lock).
 
-**Still open (Wave 5 remainder):** real probability calibration (Platt/isotonic + real-only/temporal CV), `dashboard_v2.py` panel split. (Reddit RSS parsing: done.)
+**Still open (Wave 5 remainder):** `dashboard_v2.py` panel split. (Reddit RSS parsing, probability calibration: done.)
 
 ### Wave 1 — delivered
 - `io_util.atomic_write` (temp + `os.replace`) applied to `review_queue.json`, `model.json`,

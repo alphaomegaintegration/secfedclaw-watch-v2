@@ -71,6 +71,7 @@ class GradientBoosting:
         self.f0 = 0.0
         self.stumps: list[dict] = []
         self.importances = None
+        self.platt: tuple[float, float] | None = None  # (a,b) Platt scaling, if calibrated
 
     def _best_stump(self, X, residual):
         n, d = X.shape
@@ -125,11 +126,30 @@ class GradientBoosting:
         return F
 
     def predict_proba(self, X):
-        return _sigmoid(self.decision_function(X))
+        z = self.decision_function(X)
+        if self.platt is not None:          # Platt-scaled if calibrated
+            a, b = self.platt
+            return _sigmoid(a * z + b)
+        return _sigmoid(z)
+
+    def set_platt_from_scores(self, z, y, iters: int = 300, lr: float = 0.1):
+        """Fit Platt scaling (a,b): sigmoid(a*decision + b) -> calibrated prob,
+        via 1-D logistic regression. Pass OUT-OF-FOLD decision scores so the
+        calibrator isn't fit on the same rows the model memorized."""
+        z = np.asarray(z, dtype=float); y = np.asarray(y, dtype=float)
+        if len(z) < 4 or len(np.unique(y)) < 2:
+            return self                     # too little signal — leave uncalibrated
+        a, b = 1.0, 0.0
+        for _ in range(iters):
+            p = _sigmoid(a * z + b)
+            a -= lr * float(np.mean((p - y) * z))
+            b -= lr * float(np.mean(p - y))
+        self.platt = (float(a), float(b))
+        return self
 
     def to_dict(self) -> dict:
         return {"f0": self.f0, "lr": self.lr, "stumps": self.stumps,
-                "feature_names": FEATURE_NAMES,
+                "feature_names": FEATURE_NAMES, "platt": list(self.platt) if self.platt else None,
                 "importances": (self.importances.tolist() if self.importances is not None else None)}
 
     @classmethod
@@ -137,6 +157,8 @@ class GradientBoosting:
         m = cls(learning_rate=d.get("lr", 0.2))
         m.f0 = d["f0"]
         m.stumps = d["stumps"]
+        pl = d.get("platt")
+        m.platt = tuple(pl) if pl else None
         imp = d.get("importances")
         m.importances = np.array(imp) if imp else None
         return m
@@ -173,6 +195,25 @@ def kfold_auc(X, y, k: int = 5, **kw) -> float:
     return float(np.mean(aucs)) if aucs else 0.5
 
 
+def kfold_oof_decision(X, y, k: int = 5, **kw):
+    """Out-of-fold decision_function scores aligned to X — each row scored by a
+    model that did NOT train on it. Feeds honest Platt calibration."""
+    X = np.asarray(X, dtype=float); y = np.asarray(y, dtype=float)
+    n = len(y)
+    idx = np.arange(n)
+    rng = np.random.default_rng(7)
+    rng.shuffle(idx)
+    oof = np.zeros(n, dtype=float)
+    got = np.zeros(n, dtype=bool)
+    for f in np.array_split(idx, min(k, n)):
+        test = np.zeros(n, dtype=bool); test[f] = True
+        if len(np.unique(y[~test])) < 2:
+            continue
+        m = GradientBoosting(**kw).fit(X[~test], y[~test])
+        oof[test] = m.decision_function(X[test]); got[test] = True
+    return oof, got
+
+
 def load_scorer():
     """Return (model_dict) if a trained model exists, else None."""
     if MODEL_PATH.exists():
@@ -197,7 +238,13 @@ def score_package(package: dict[str, Any], model_dict: dict) -> dict[str, Any]:
         top = np.argsort(m.importances)[::-1][:4]
         contribs = [{"feature": names[i], "value": round(vals[i], 2),
                      "importance": round(float(m.importances[i]), 3)} for i in top]
+    calibrated = model_dict.get("platt") is not None
+    n_real = model_dict.get("n_real_labels", 0)
+    kind = "Platt-calibrated" if calibrated else "uncalibrated"
     return {"review_priority_probability": round(proba, 4),
             "top_features": contribs,
             "model_version": model_dict.get("model_version", "gbm_v1"),
-            "note": "Advisory calibrated probability for triage only; not a guilt/fraud label or trading signal."}
+            "calibrated": calibrated,
+            "n_real_labels": n_real,        # so a bootstrap-heavy model is legible
+            "note": (f"Advisory {kind} probability for triage only (trained on {n_real} real "
+                     f"labels + bootstrap); not a guilt/fraud label or trading signal.")}
