@@ -14,9 +14,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from io_util import atomic_write
+from config import output_root
 
 HERE = Path(__file__).resolve().parent
-OUT = HERE / "out"
+OUT = output_root()
 sys.path.insert(0, str(HERE))
 
 # Which integrations each agent depends on (for the per-agent view).

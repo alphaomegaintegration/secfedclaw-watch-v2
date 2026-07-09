@@ -21,8 +21,9 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+from config import output_root
 
-MODEL_PATH = Path(__file__).resolve().parent / "out" / "model" / "model.json"
+MODEL_PATH = output_root() / "model" / "model.json"
 MIN_LABELS = 40          # minimum labeled samples before the model is usable
 MIN_PER_CLASS = 8
 

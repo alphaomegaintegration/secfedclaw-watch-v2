@@ -30,6 +30,20 @@ def fed_claw_root() -> Path:
     return Path(__file__).resolve().parent
 
 
+def output_root() -> Path:
+    """Single source of truth for the generated-artifact directory (packages,
+    review_queue, model, ledger, entities, edgar, agent_status, dashboard).
+
+    Defaults to <repo>/out (what every module used to hard-code independently),
+    overridable via SECFEDCLAW_OUT_DIR. Centralizing this fixes the desync where
+    `scan.py --out X` wrote packages to X while the dashboard/model/ledger still
+    read from the module-relative out/."""
+    env_out = os.environ.get("SECFEDCLAW_OUT_DIR")
+    if env_out:
+        return Path(env_out)
+    return fed_claw_root() / "out"
+
+
 def candidate_env_paths(root: Path) -> list[Path]:
     """Where the .env may live, in priority order."""
     return [

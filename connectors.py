@@ -25,7 +25,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from config import load_env, fed_claw_root
+from config import load_env, fed_claw_root, output_root
 from concurrency import RateLimiter, retry
 from scrape_provider import ScrapeProvider, coerce_search_to_posts
 
@@ -658,7 +658,7 @@ class DataConnector:
 
     def edgar_issuer_features(self, ticker: str) -> Fetch:
         """Load issuer-event features produced by edgar_pipeline.py (if any)."""
-        path = Path(__file__).resolve().parent / "out" / "edgar" / f"issuer_features_{ticker.upper()}.json"
+        path = output_root() / "edgar" / f"issuer_features_{ticker.upper()}.json"
         if not path.exists():
             return Fetch(name=f"edgar_issuer_features_{ticker.upper()}", mode="unavailable",
                          status=None, data=None, note="no EDGAR issuer features; run edgar_pipeline.py")

@@ -26,8 +26,9 @@ import threading
 import time
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
+from config import output_root
 
-OUT = Path(__file__).resolve().parent / "out"
+OUT = output_root()
 DEFAULT_PORT = 8787
 
 # Tickers accepted by the control endpoint: uppercase alnum + . and -, bounded.

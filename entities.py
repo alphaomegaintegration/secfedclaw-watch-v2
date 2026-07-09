@@ -32,9 +32,10 @@ import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
+from config import output_root
 
 HERE = Path(__file__).resolve().parent
-OBS_PATH = HERE / "out" / "entities" / "observations.jsonl"
+OBS_PATH = output_root() / "entities" / "observations.jsonl"
 _APPEND_LOCK = threading.Lock()  # serialize appends under the threaded server
 
 TYPES = ("content_cluster", "domain", "account", "issuer")
@@ -241,7 +242,7 @@ def main() -> int:
     ap = argparse.ArgumentParser(description="SECFEDCLAW cross-run entity resolution")
     ap.add_argument("--rebuild", action="store_true",
                     help="(idempotently) observe every package in out/ so the graph has history")
-    ap.add_argument("--out", default=str(HERE / "out"), help="output dir holding *_watch_v2.json")
+    ap.add_argument("--out", default=str(output_root()), help="output dir holding *_watch_v2.json")
     ap.add_argument("--min-tickers", type=int, default=2)
     args = ap.parse_args()
     if args.rebuild:
