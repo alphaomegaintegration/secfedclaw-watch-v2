@@ -129,7 +129,9 @@ content-cluster merge + a gated `entity_recurrence_score`) make it *smart* once 
 - **90-day issuer recency gate** (`_ISSUER_RECENCY_DAYS`) — a stale filing no longer lights a near-free second family; the ≥2-family HIGH/CRITICAL gate is meaningful again.
 - **Monotonic market map** — `min(score,100)`; the ≤100 band region is unchanged, extreme raw scores saturate at 100 instead of folding back below weaker ones.
 
-**Still open (Wave 5 remainder):** real probability calibration (Platt/isotonic + real-only/temporal CV), `dashboard_v2.py` panel split, unified `out/` path, `edgar_pipeline`/`CIK_MAP` decouple, Reddit RSS parsing into posts.
+**Wave 5 — delivered so far:** backtest de-circularization (above); **unified `out/` path** (`config.output_root()` + `SECFEDCLAW_OUT_DIR`, applied across all 9 modules — fixes the `scan.py --out` desync); **decoupled `CIK_MAP`** into a thread-safe `cik_registry.py` (breaks the `edgar_pipeline`→`agents` import cycle, adds the missing load lock).
+
+**Still open (Wave 5 remainder):** real probability calibration (Platt/isotonic + real-only/temporal CV), `dashboard_v2.py` panel split, Reddit RSS parsing into posts.
 
 ### Wave 1 — delivered
 - `io_util.atomic_write` (temp + `os.replace`) applied to `review_queue.json`, `model.json`,

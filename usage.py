@@ -19,8 +19,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 import threading
+from config import output_root
 
-USAGE_DIR = Path(__file__).resolve().parent / "out" / "usage"
+USAGE_DIR = output_root() / "usage"
 LEDGER = USAGE_DIR / "llm_usage.jsonl"
 PRICING_OVERRIDE = USAGE_DIR / "pricing.json"
 

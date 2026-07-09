@@ -26,8 +26,9 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from model import feature_vector  # noqa: E402
 import threading
+from config import output_root
 
-LEDGER_PATH = Path(__file__).resolve().parent / "out" / "ledger" / "labels.jsonl"
+LEDGER_PATH = output_root() / "ledger" / "labels.jsonl"
 POSITIVE = {"useful_watch", "missed_event"}
 NEGATIVE = {"false_positive", "benign_explained", "insufficient_evidence"}
 VALID = POSITIVE | NEGATIVE

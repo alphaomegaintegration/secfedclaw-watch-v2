@@ -24,8 +24,9 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import agent_status as agentstatus  # noqa: E402
 import usage as usage_mod  # noqa: E402
+from config import output_root
 
-OUT = Path(__file__).resolve().parent / "out"
+OUT = output_root()
 
 PRI = {"CRITICAL_REVIEW": ("crit", "Critical review"), "HIGH": ("high", "High"),
        "MEDIUM": ("med", "Medium"), "LOW": ("low", "Low")}

@@ -33,13 +33,13 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from connectors import DataConnector  # noqa: E402
-from config import DEFAULT_UNIVERSE  # noqa: E402
+from config import DEFAULT_UNIVERSE, output_root  # noqa: E402
 from features import edgar  # noqa: E402
 from io_util import atomic_write
 
 PKG = Path(__file__).resolve().parent
 STATE_PATH = PKG / "state" / "edgar_state.json"
-OUT_DIR = PKG / "out" / "edgar"
+OUT_DIR = output_root() / "edgar"
 
 
 def _load_state() -> dict[str, Any]:
@@ -85,7 +85,7 @@ def _ticker_cik_map(conn: DataConnector, tickers: list[str]) -> dict[str, str]:
             elif isinstance(row, list) and len(row) >= 3:
                 out[str(row[2]).upper()] = str(row[0]).zfill(10)
     # restrict to the requested watch universe; fall back to the built-in map
-    from agents import CIK_MAP
+    from cik_registry import CIK_MAP
     wanted = {t.upper() for t in tickers}
     resolved: dict[str, str] = {}
     for t in wanted:
