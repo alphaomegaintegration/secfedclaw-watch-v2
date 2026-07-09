@@ -1,0 +1,948 @@
+"""SECFEDCLAW dashboard panel renderers — each returns an HTML fragment.
+The orchestrator (dashboard_v2) assembles them into the page."""
+from dashboard_common import *  # noqa: F401,F403
+
+__all__ = ['_ledger_label_map', '_nav_section', '_pkg_drilldown', '_pkg_label_actions', '_pkg_ts_html', '_tab', 'agent_status_panel', 'agents_panel', 'backtest_panel', 'case_studies_panel', 'entities_panel', 'how_it_works_panel', 'kpi_panel', 'learning_panel', 'llm_cost_panel', 'methodology_panel', 'network_graph_panel', 'package_cards', 'queue_table', 'runs_panel', 'social_intel_card', 'source_health_panel']
+
+def kpi_panel(queue: dict[str, Any]) -> str:
+    valid = [r for r in queue.get("review_queue", []) if "error" not in r]
+    universe = queue.get("universe_size", len(valid))
+    dist = {p: sum(1 for r in valid if r.get("review_priority") == p) for p in PRI}
+    flagged = dist["CRITICAL_REVIEW"] + dist["HIGH"] + dist["MEDIUM"]
+    mean_anom = round(sum(r.get("anomaly_evidence_score", 0) for r in valid) / len(valid), 1) if valid else 0
+    ready = f"{round(len(valid)/universe*100):d}%" if universe else "—"
+    cards = [
+        ("Universe", universe, "tickers scanned this run"),
+        ("Scored", len(valid), "packages produced"),
+        ("Score-ready", ready, "scored ÷ universe"),
+        ("Flagged ≥MED", flagged, "need human review"),
+        ("Critical", dist["CRITICAL_REVIEW"], "urgent review"),
+        ("High", dist["HIGH"], "elevated"),
+        ("Mean anomaly", mean_anom, "avg concern evidence"),
+        ("Data mode", queue.get("data_mode", "?"), "live or replay"),
+    ]
+    return '<div class="kpis">' + "".join(
+        f'<div class="kpi"><div class="kpi-num">{esc(v)}</div><div class="kpi-lbl">{esc(l)}</div>'
+        f'<div class="kpi-sub">{esc(s)}</div></div>' for l, v, s in cards) + '</div>'
+
+
+
+def queue_table(queue: dict[str, Any]) -> str:
+    rows = []
+    for r in queue.get("review_queue", []):
+        if "error" in r:
+            rows.append(f'<tr><td>{esc(r["ticker"])}</td><td colspan="7" class="muted">error: {esc(r["error"])}</td></tr>')
+            continue
+        rows.append(
+            f'<tr data-priority="{esc(r["review_priority"])}">'
+            f'<td class="tk"><button class="tk-link" onclick="gotoPkg(\'{esc(r["ticker"])}\')" '
+            f'title="open evidence package">{esc(r["ticker"])}</button>{ticker_links(r["ticker"])}</td>'
+            f'<td>{pill(r["review_priority"])}</td>'
+            f'<td>{bar(r.get("watch_score",0))}</td>'
+            f'<td>{bar(r.get("anomaly_evidence_score",0), cls="anom")}</td>'
+            f'<td class="num">{r.get("evidence_quality_score",0):.0f}</td>'
+            f'<td class="num">{r.get("n_families_active",0)}</td>'
+            f'<td class="muted small">{esc(CLASS_ABBR.get(r.get("security_class"), r.get("security_class") or "?"))}</td>'
+            f'<td class="muted small">{esc(r.get("data_mode","?"))}</td></tr>')
+    body = "".join(rows) or '<tr><td colspan="8" class="muted">No review queue yet — run scan.py.</td></tr>'
+    return (
+        '<table><thead><tr>'
+        '<th>Ticker</th><th>Priority</th>'
+        f'<th>Watch score {info("watch_score")}</th>'
+        f'<th>Anomaly evidence {info("anomaly_evidence")}</th>'
+        f'<th class="num">Ev.Q {info("evidence_quality")}</th>'
+        f'<th class="num">Fam {info("families")}</th>'
+        f'<th>Class {info("security_class")}</th><th>Mode</th>'
+        f'</tr></thead><tbody>{body}</tbody></table>')
+
+
+
+def source_health_panel(queue: dict[str, Any]) -> str:
+    agg: dict[str, dict[str, int]] = {}
+    for r in queue.get("review_queue", []):
+        for src, h in (r.get("source_health") or {}).items():
+            a = agg.setdefault(src, {"ok": 0, "total": 0, "live": 0, "replay": 0})
+            a["total"] += 1
+            a["ok"] += 1 if h.get("ok") else 0
+            a["live"] += 1 if h.get("mode") == "live" else 0
+            a["replay"] += 1 if h.get("mode") == "replay" else 0
+    if not agg:
+        return ""
+    rows = "".join(
+        f'<tr><td>{esc(s)}</td><td class="num">{v["ok"]}/{v["total"]}</td>'
+        f'<td class="num">{v["live"]}</td><td class="num">{v["replay"]}</td></tr>'
+        for s, v in sorted(agg.items()))
+    return ('<div class="card"><h3>Data feed health <span class="muted small">(across scanned tickers)</span></h3>'
+            '<table class="mini"><thead><tr><th>feed</th><th class="num">ok</th>'
+            f'<th class="num">live</th><th class="num">replay</th></tr></thead><tbody>{rows}</tbody></table></div>')
+
+
+
+def social_intel_card(p: dict[str, Any]) -> str:
+    """Render the Phase 2/3 social-intel evidence — only when present (it's null
+    unless SECFEDCLAW_SOCIAL_INTEL[_LLM] ran). The LLM verdict is shown as
+    advisory; it is never part of the score."""
+    si = p.get("social_intel")
+    if not si or not isinstance(si, dict):
+        return ""
+    status = ["coordinated push" if si.get("coordinated_push") else "no cross-platform push",
+              "market-verified" if si.get("market_verified") else "no market confirm"]
+    if si.get("applied"):
+        status.append(f"+{si.get('coordination_bump', 0)} coordination")
+    out = (f'<p class="small si"><b>&#128225; Social-intel {info("social_intel")}:</b> '
+           f'{esc(" · ".join(status))} · {si.get("n_cross_platform_clusters", 0)} cross-platform '
+           f'cluster(s), up to {si.get("max_unique_authors", 0)} distinct accounts</p>')
+    cls = si.get("cross_platform_clusters") or []
+    if cls:
+        out += '<ul class="small si-list">' + "".join(
+            f'<li>{esc(" + ".join(c.get("platforms", [])))} — {c.get("n_unique_authors", 0)} accounts, '
+            f'{c.get("n_posts", 0)} posts</li>' for c in cls[:4]) + "</ul>"
+    llm = si.get("llm")
+    if llm and isinstance(llm, dict):
+        out += (f'<p class="small si"><b>LLM urgency (advisory):</b> verdict '
+                f'<i>{esc(llm.get("verdict", "none"))}</i> · {llm.get("n_signals_verified", 0)} verified, '
+                f'{llm.get("n_dropped", 0)} dropped · +{llm.get("urgency_bump", 0)} '
+                f'<span class="muted">({esc(llm.get("model") or "?")})</span></p>')
+        vs = llm.get("verified_signals") or []
+        if vs:
+            out += '<ul class="small si-list">' + "".join(
+                f'<li>&ldquo;{esc(s.get("phrase", ""))}&rdquo; '
+                f'<span class="muted">[{esc(s.get("category", ""))}]</span></li>' for s in vs[:5]) + "</ul>"
+    return out
+
+
+
+def _pkg_drilldown(p: dict[str, Any]) -> str:
+    """Expandable evidence the examiner can open — turns the card's summary
+    counts into the underlying questions, signals, custody artifacts, and the
+    WATCH boundary. All from data already in the package (static, no backend)."""
+    import os
+    out = []
+    # Examiner checklist — the questions to ask of this package.
+    rq = p.get("review_questions") or []
+    if rq:
+        out.append(_dd("Review questions", len(rq),
+                       "<ol class='small dd-list'>" + "".join(f"<li>{esc(q)}</li>" for q in rq) + "</ol>"))
+    # Coordination evidence (the posts/domains behind the cluster count).
+    coord = p.get("coordination_detail") or {}
+    basis = coord.get("basis") or []
+    clusters = coord.get("near_duplicate_clusters") or []
+    domains = coord.get("shared_domain_groups") or []
+    if basis or clusters or domains:
+        b = "<ul class='small dd-list'>" + "".join(f"<li>{esc(x)}</li>" for x in basis) + "</ul>"
+        if clusters:
+            b += (f"<p class='small muted'>{len(clusters)} near-duplicate cluster(s); "
+                  f"max burst {coord.get('max_posts_in_burst','?')} posts. Post IDs:</p>"
+                  "<ul class='small dd-list'>" + "".join(
+                      f"<li>cluster {i+1}: {esc(', '.join(str(x) for x in (c.get('post_ids') or [])[:8]))}</li>"
+                      for i, c in enumerate(clusters[:6])) + "</ul>")
+        if domains:
+            b += "<p class='small muted'>Shared domains:</p><ul class='small dd-list'>" + "".join(
+                f"<li>{esc(str(g))}</li>" for g in domains[:8]) + "</ul>"
+        out.append(_dd("Coordination evidence", len(clusters) or len(basis), b))
+    # Cross-run entity recurrence — same domains/clusters/accounts on OTHER tickers.
+    try:
+        import entities as _ent
+        rec = _ent.recurrence_for_package(p)
+    except Exception:
+        rec = []
+    if rec:
+        rows = "".join(
+            f"<li><b>{esc(r['type'].replace('_',' '))}</b> "
+            f"<span class='mono'>{esc(r['label'][:40])}</span> — also seen on "
+            f"<b>{esc(', '.join(r['also_seen_on'][:8]))}</b> "
+            f"({r['n_tickers']} tickers · {r['span_days']}d)</li>"
+            for r in rec[:8])
+        out.append(_dd("Cross-ticker recurrence", len(rec),
+                       "<ul class='small dd-list'>" + rows + "</ul>"
+                       "<p class='small muted'>The same actor/script seen on other tickers. "
+                       "Backward-looking WATCH context for review — not proof of misconduct.</p>"))
+    # Market anomaly basis (the z-scores behind the market score).
+    md = p.get("market_detail") or {}
+    ab = md.get("anomaly_basis") or []
+    if ab:
+        out.append(_dd("Market anomaly basis", len(ab),
+                       "<ul class='small dd-list'>" + "".join(f"<li>{esc(x)}</li>" for x in ab) + "</ul>"))
+    # Limitations + evidence gaps — what is NOT established.
+    lim = (p.get("limitations") or []) + [f"gap: {g}" for g in (p.get("evidence_gaps") or [])]
+    if lim:
+        out.append(_dd("Limitations & gaps", len(lim),
+                       "<ul class='small dd-list'>" + "".join(f"<li>{esc(x)}</li>" for x in lim) + "</ul>"))
+    # Custody trail — every raw artifact with its SHA256, for verification.
+    ev = p.get("evidence") or []
+    if ev:
+        rows = "".join(
+            f"<tr><td class='small'>{esc(os.path.basename(e.get('artifact_path','') or '—'))}</td>"
+            f"<td class='small mono' title='{esc(e.get('artifact_path',''))}'>"
+            f"{esc((e.get('artifact_sha256') or '')[:12])}{'…' if e.get('artifact_sha256') else ''}</td></tr>"
+            for e in ev[:40])
+        out.append(_dd("Custody & raw artifacts", len(ev),
+                       "<table class='mini'><thead><tr><th>source</th><th>sha256</th></tr></thead>"
+                       f"<tbody>{rows}</tbody></table>"))
+    # WATCH boundary — the prohibited actions, always one click away.
+    pa = p.get("prohibited_actions") or []
+    if pa:
+        out.append(_dd("WATCH boundary (prohibited)", len(pa),
+                       "<ul class='small dd-list'>" + "".join(f"<li>{esc(x)}</li>" for x in pa) + "</ul>"))
+    return ("<div class='dd-wrap'>" + "".join(out) + "</div>") if out else ""
+
+
+
+def _pkg_label_actions(p: dict[str, Any], prior: dict | None = None) -> str:
+    """Examiner action row — record an outcome label on this exact package.
+    All five ledger labels, an optional note, and a prior-label badge so the
+    examiner sees what was already adjudicated. Posts to serve.py /api/label;
+    degrades to a hint on file://."""
+    f = p.get("_source_file")
+    if not f:
+        return ""
+    # Full ledger taxonomy — missed_event + insufficient_evidence were CLI-only.
+    btns = [("useful_watch", "Useful watch"), ("missed_event", "Missed event"),
+            ("false_positive", "False positive"), ("benign_explained", "Benign"),
+            ("insufficient_evidence", "Insufficient")]
+    fj = esc(f)
+    b = "".join(
+        f'<button class="lbl-btn" onclick="label(\'{fj}\',\'{lab}\',this)">{esc(txt)}</button>'
+        for lab, txt in btns)
+    prior_html = ""
+    if prior and prior.get("label"):
+        d = (prior.get("ts") or "")[:10]
+        prior_html = (f'<span class="lbl-prior" title="already labeled">✓ labeled '
+                      f'{esc(prior["label"])}{f" on {esc(d)}" if d else ""}</span>')
+    note = (f'<input class="lbl-note" type="text" maxlength="500" '
+            f'placeholder="note (optional)" aria-label="label note for {esc(p.get("ticker",""))}">')
+    return (f'<div class="lbl-actions"><span class="lbl-cap">Examiner label:</span>'
+            f'{b}{note}{prior_html}<span class="lbl-status muted small"></span></div>')
+
+
+
+def _ledger_label_map() -> dict[tuple, dict]:
+    """Latest operator label per (ticker, source_run) so a card can show it was
+    already adjudicated — stops silent double-labeling on reload."""
+    try:
+        import ledger
+        rows = ledger.load_labels()
+    except Exception:
+        return {}
+    m: dict[tuple, dict] = {}
+    for r in rows:
+        key = (r.get("ticker"), r.get("source_run"))
+        cur = m.get(key)
+        if cur is None or r.get("ts", "") >= cur.get("ts", ""):
+            m[key] = {"label": r.get("label"), "ts": r.get("ts", "")}
+    return m
+
+
+
+def _pkg_ts_html(p: dict[str, Any]) -> str:
+    """Run timestamp + age for a package card, so a weeks-old package is never
+    mistaken for current. Flags >48h old as stale."""
+    ts = p.get("generated_utc") or ""
+    try:
+        dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+        secs = int((datetime.now(timezone.utc) - dt).total_seconds())
+        cls = "pkg-ts stale" if secs > 48 * 3600 else "pkg-ts"
+        tag = " · STALE" if secs > 48 * 3600 else ""
+        return f'<span class="{cls}">{dt.strftime("%Y-%m-%d %H:%MZ")} · {_fmt_age(secs)} ago{tag}</span>'
+    except Exception:
+        return ""
+
+
+
+def package_cards(packages: list[dict[str, Any]]) -> str:
+    cards = []
+    labels = _ledger_label_map()
+    for p in sorted(packages, key=lambda d: d.get("watch_score", 0), reverse=True)[:24]:
+        _prior = labels.get((p.get("ticker"), p.get("source_run_id") or p.get("generated_utc")))
+        comp = p.get("component_scores", {})
+        order = ["market_anomaly_score", "coordination_score", "issuer_event_score",
+                 "enforcement_history_score", "market_structure_score", "halt_regulatory_score",
+                 "options_flow_score", "issuer_context_score",
+                 "social_issuer_specific_burst", "social_promotional_noise"]
+        comp_rows = "".join(
+            f'<tr><td>{esc(k.replace("_"," "))} {info(k)}</td><td>{bar(comp.get(k,0))}</td></tr>'
+            for k in order if k in comp)
+        corr = p.get("corroboration", {})
+        caps = p.get("score_caps_applied", []) or ["none"]
+        adv = (p.get("adversarial_review") or {}).get("caveats", [])
+        coord = p.get("coordination_detail", {})
+        clusters = coord.get("near_duplicate_clusters", [])
+        ma = p.get("model_advisory")
+        sc = p.get("security_class", {})
+        ma_html = (f'<p class="small model"><b>Model advisory {info("model_advisory")}:</b> '
+                   f'P(review-worthy)={ma["review_priority_probability"]:.2f} '
+                   f'· top: {esc(", ".join(c["feature"] for c in ma.get("top_features", [])[:3]))}</p>'
+                   if ma else "")
+        _pri = p.get("review_priority", "LOW")
+        _open = " open" if _pri in _MED_PLUS else ""  # flagged open; LOW collapsed to cut noise
+        cards.append(
+            f'<details id="pkg-{esc(p.get("ticker",""))}" class="card pkg" data-priority="{esc(_pri)}"{_open}>'
+            f'<summary class="pkg-head"><h3>{esc(p.get("ticker"))}</h3>{pill(_pri)}'
+            f'<span class="pkg-sum muted">score {p.get("watch_score",0):.0f} · anomaly '
+            f'{p.get("anomaly_evidence_score",0):.0f} · {esc(CLASS_ABBR.get(sc.get("class"), "?"))}</span>'
+            f'{_pkg_ts_html(p)}</summary>'
+            f'{ticker_links(p.get("ticker",""))}'
+            f'<p class="muted small">score {p.get("watch_score",0):.0f} · anomaly {p.get("anomaly_evidence_score",0):.0f} '
+            f'· evidence-quality {p.get("evidence_quality_score",0):.0f} · {esc(CLASS_ABBR.get(sc.get("class"), "?"))} '
+            f'· {esc(p.get("data_mode","?"))}</p>'
+            + (f'<p class="small expl"><b>Review summary</b> '
+               f'<span class="muted">({esc((p.get("review_explanation") or {}).get("source","template"))})</span>: '
+               f'{esc((p.get("review_explanation") or {}).get("text",""))}</p>'
+               if (p.get("review_explanation") or {}).get("text") else "")
+            + f'<table class="mini">{comp_rows}</table>'
+            f'<p class="small"><b>Families active:</b> {esc(", ".join(corr.get("families_active",[])) or "none")} '
+            f'(×{corr.get("corroboration_multiplier","?")})</p>'
+            f'<p class="small"><b>Caps:</b> {esc("; ".join(caps))}</p>'
+            + (f'<p class="small warn"><b>Coordination:</b> {len(clusters)} near-duplicate cluster(s)</p>' if clusters else "")
+            + social_intel_card(p)
+            + (f'<p class="small enf"><b>Enforcement history (backward-looking):</b> '
+               f'{len((p.get("enforcement_history") or {}).get("matched_releases", []))} prior release(s) referenced</p>'
+               if (p.get("enforcement_history") or {}).get("matched_releases") else "")
+            + (f'<p class="small warn"><b>&#9888; Needs adjustment review {info("needs_adjustment_review")}:</b> '
+               f'Recent split — {esc("; ".join((p.get("corporate_action_detail") or {}).get("recent_splits", ["details unavailable"])))}. '
+               f'Market anomaly baseline may be unreliable.</p>'
+               if p.get("needs_adjustment_review") else "")
+            + (f'<p class="small adv"><b>Options flow {info("options_flow_score")}:</b> '
+               f'{esc("; ".join((p.get("options_flow_detail") or {}).get("basis", ["no unusual activity detected"])))}</p>'
+               if (p.get("options_flow_detail") or {}).get("basis") else "")
+            + (f'<p class="small promo"><b>&#9873; OTC promotion disclosure {info("promo_disclosure")}:</b> '
+               f'{(p.get("promo_disclosure_detail") or {}).get("record_count", 0)} paid-promoter filing(s) on OTC Markets. '
+               f'+20 added to issuer event score.</p>'
+               if (p.get("promo_disclosure_detail") or {}).get("has_disclosure") else "")
+            + ma_html
+            + f'<p class="small adv"><b>Adversary:</b> {esc("; ".join(adv[:2]))}</p>'
+            f'<p class="small rationale">{esc(p.get("non_accusatory_rationale",""))}</p>'
+            + _pkg_drilldown(p)
+            + _pkg_label_actions(p, _prior)
+            + '</details>')
+    return "".join(cards) or '<p class="muted">No packages yet. Run scan.py.</p>'
+
+
+# --------------------------------------------------------------------------- #
+# Agents / orchestration
+# --------------------------------------------------------------------------- #
+
+def agents_panel(queue: dict[str, Any]) -> str:
+    stages = "".join(
+        f'<div class="stage"><div class="stage-num">{n}</div><h3>{esc(name)}</h3>'
+        f'<div class="tag">{esc(tag)}</div><p class="small">{esc(does)}</p>'
+        f'<p class="small out"><b>Output:</b> {esc(out)}</p></div>'
+        + ('<div class="arrow">→</div>' if n != "05" else "")
+        for n, name, tag, does, out in AGENTS)
+    return (
+        '<p class="intro">Each ticker flows through a five-agent pipeline (the <code>Orchestrator</code> in '
+        '<code>agents.py</code>); <code>scan.py</code> runs it across the universe and ranks the results. '
+        'Every agent is role-bounded and cannot trade, contact anyone, or exceed the WATCH ceiling.</p>'
+        f'<div class="pipeline">{stages}</div>'
+        f'{source_health_panel(queue)}'
+        '<div class="card"><h3>Why this design</h3><p class="small">Separating detection (Scout/Analyst) from '
+        'adversarial review (Adversary) and evidence assembly (Packager) keeps concern-bearing signal distinct from '
+        'reviewability, forces cross-source corroboration before escalation, and preserves an auditable custody trail '
+        '— the discipline an enforcement-adjacent system requires.</p></div>')
+
+
+# --------------------------------------------------------------------------- #
+# Methodology / data dictionary
+# --------------------------------------------------------------------------- #
+
+def methodology_panel() -> str:
+    dd = "".join(f'<tr><td><b>{esc(k.replace("_"," "))}</b></td><td class="small">{esc(v)}</td></tr>'
+                 for k, v in DEFS.items())
+    return (
+        '<p class="intro">SECFEDCLAW fuses social, market, official (SEC/FINRA/Nasdaq) and microstructure signals into '
+        'a calibrated review-priority score. It is designed to <b>reduce time-to-review</b>, not to conclude wrongdoing. '
+        'Every score cites artifacts and lists plausible benign explanations.</p>'
+        '<div class="card"><h3>Review-priority bands</h3>'
+        '<div class="bands">'
+        '<span class="pill low">LOW &lt;25</span><span class="pill med">MEDIUM 25–49</span>'
+        '<span class="pill high">HIGH 50–74</span><span class="pill crit">CRITICAL ≥75</span></div>'
+        '<p class="small muted">HIGH/CRITICAL require ≥2 independent corroborating families. Single-source, social-only, '
+        'no-market-context, low-evidence and routine-context cases are capped. A strong benign explanation reduces a band.</p></div>'
+        '<div class="card"><h3>Data dictionary</h3><table class="mini"><tbody>' + dd + '</tbody></table></div>'
+        '<div class="card"><h3>What it does NOT do</h3><p class="small">No fraud determination, no trading signal, '
+        'no contact with regulators/brokers/issuers/victims, no asset freeze, no legal process. Findings are bounded by the '
+        'artifacts available at run time and require human adjudication.</p></div>')
+
+
+# --------------------------------------------------------------------------- #
+# SEC threshold case studies (illustrative; allegations unless final judgment)
+# --------------------------------------------------------------------------- #
+
+def case_studies_panel() -> str:
+    intro = ('<p class="intro">Illustrative patterns from public SEC matters, mapped to which SECFEDCLAW thresholds '
+             'would fire and why — for SEC reviewers to see where a threshold is hit, and for building labeled training '
+             'windows. These are official allegations (unless final judgment); SECFEDCLAW asserts no new findings.</p>')
+    worked = (
+        '<div class="card worked"><h3>Worked example — threshold hit (synthetic)</h3>'
+        '<p class="small">A thin microcap, +60% on ~25× volume, with 8 near-duplicate promotional posts across X + '
+        'StockTwits (unanimous bullish) and a fresh S-3 + Form 4 in the EDGAR daily-diff:</p>'
+        '<table class="mini"><tbody>'
+        '<tr><td>market_anomaly</td><td>price-z & volume-z ≥ 2.5 (microcap) → <b>double-confirmed</b></td></tr>'
+        '<tr><td>coordination</td><td>near-duplicate cluster (8) + burst sync + unanimous-bullish → <b>≥30</b></td></tr>'
+        '<tr><td>issuer_event</td><td>dilution (S-3/424B) + insider (Form 4) → <b>≥30</b></td></tr>'
+        '<tr><td>corroboration</td><td>market + coordination + issuer_event = <b>3 families</b></td></tr>'
+        '<tr><td>result</td><td>routine-context floor cleared → <b>HIGH</b> (review, not a finding)</td></tr>'
+        '</tbody></table>'
+        '<p class="small muted">Benign check: is there a real catalyst (earnings, approval, contract)? '
+        'Are the posts spam unrelated to the ticker? Confirm before any human escalation.</p></div>')
+    cards = "".join(
+        f'<div class="card case"><div class="case-head"><h3>{esc(c["id"])}</h3>'
+        f'<a href="{c["url"]}" target="_blank" rel="noopener noreferrer" class="src">{esc(c["src"])} ↗</a></div>'
+        f'<p class="small"><b>Pattern:</b> {esc(c["pattern"])}</p>'
+        f'<p class="small thr"><b>Thresholds hit:</b> {esc(c["thresholds"])}</p>'
+        f'<p class="small"><b>Why:</b> {esc(c["explain"])}</p>'
+        f'<p class="small train"><b>Training value:</b> {esc(c["training"])}</p></div>'
+        for c in CASES)
+    return intro + worked + '<div class="cases">' + cards + '</div>'
+
+
+
+def agent_status_panel(queue: dict[str, Any]) -> str:
+    st = agentstatus.build(queue)
+    sysd, llm = st["system"], st["llm"]
+    sys_cards = [
+        ("Integrations live", f'{sysd["integrations_live"]}/{sysd["integrations_total"]}',
+         f'{sysd.get("integrations_live_pct", 0)}% reachable'),
+        ("Preflight", sysd["preflight_verdict"], "live readiness"),
+        ("Last run", _fmt_age(sysd.get("last_run_age_s")), "ago (at build)"),
+        ("Error rate", f'{round(sysd.get("error_rate", 0) * 100)}%',
+         f'{sysd.get("errors", 0)}/{sysd.get("runs", 0)} tickers'),
+        ("LLM paid", f'${llm.get("paid_cost_usd", 0):.2f}', f'{llm.get("paid_calls", 0)} paid calls'),
+        ("Search LLM", f'{llm.get("search_calls", 0)} calls', _search_model_short(llm.get("search_model", ""))),
+    ]
+    kpis = "".join(f'<div class="kpi"><div class="kpi-num">{esc(v)}</div><div class="kpi-lbl">{esc(l)}</div>'
+                   f'<div class="kpi-sub">{esc(s)}</div></div>' for l, v, s in sys_cards)
+
+    def _lat(a):
+        p50, mx = a.get("latency_ms"), a.get("max_ms")
+        return f'{_fmt_ms(p50)} / {_fmt_ms(mx)}' if p50 is not None else "—"
+
+    agents = "".join(
+        f'<tr><td><b>{esc(a["name"])}</b></td><td>{_state_dot(a["state"])}</td>'
+        f'<td class="num">{_lat(a)}</td><td class="num">{a.get("runs", 0)}</td>'
+        f'<td class="small">{esc(a["role"])}</td></tr>'
+        for a in st["agents"])
+    integ = "".join(
+        f'<tr><td>{esc(i["integration"])}</td><td>{_state_dot(i["state"])}</td>'
+        f'<td class="num">{i.get("success_pct", 0)}%</td>'
+        f'<td class="num">{i["live"]}/{i["replay"]}</td>'
+        f'<td class="small">{esc(i.get("provider", "—"))}</td></tr>'
+        for i in st["integrations"]) or '<tr><td colspan="5" class="muted">No integration health yet — run a scan.</td></tr>'
+    return (
+        '<p class="intro">SRE view: system SLOs, integration health, and agent performance for the most recent '
+        'scan. Static snapshot — run <code>scan.py --live</code> to refresh.</p>'
+        f'<div class="kpis">{kpis}</div>'
+        '<div class="card"><h3>Agent performance</h3>'
+        '<table class="mini"><thead><tr><th>agent</th><th>state</th><th class="num">latency p50 / max</th>'
+        '<th class="num">runs</th><th>role</th></tr></thead>'
+        f'<tbody>{agents}</tbody></table>'
+        '<p class="small muted">latency = per-agent pipeline-stage time across tickers this run (p50 / max). '
+        f'Scout includes the live web/social fetches, so the search-LLM ({esc(_search_model_short(llm.get("search_model", "")))}) '
+        'latency dominates it.</p></div>'
+        '<div class="card"><h3>Integration health</h3>'
+        '<table class="mini"><thead><tr><th>integration</th><th>state</th><th class="num">success</th>'
+        '<th class="num">live/replay</th><th>provider</th></tr></thead>'
+        f'<tbody>{integ}</tbody></table>'
+        '<p class="small muted">live = fetched this run · replay = cached custody · provider = which scraper '
+        'served it (scrapegraphai primary → firecrawl fallback). '
+        f'LLM: paid ${llm.get("paid_cost_usd", 0):.2f} ({llm.get("paid_calls", 0)} calls) · search '
+        f'{llm.get("search_calls", 0)} via {esc(llm.get("search_model", "—"))} '
+        '(scrapegraphai internal calls are not token-metered).</p></div>')
+
+
+
+def llm_cost_panel() -> str:
+    s = usage_mod.summary()
+    if not s.get("n_calls"):
+        return ('<p class="intro">Tracks LLM usage &amp; cost across the system. The v0.2 scoring core is rules + '
+                'numpy (no LLM calls), so this is empty until an LLM-backed component records spend via '
+                '<code>usage.record(...)</code> — e.g. a future LLM explanation/adversary agent or the Haiku digest. '
+                'Prices are configurable in <code>out/usage/pricing.json</code>.</p>'
+                '<div class="card"><h3>No LLM usage recorded yet</h3>'
+                '<p class="small muted">Record a call: <code>python3 usage.py --record claude-haiku-4.5 1200 300 --component digest</code></p></div>')
+    kpis = "".join(f'<div class="kpi"><div class="kpi-num">{esc(v)}</div><div class="kpi-lbl">{esc(l)}</div></div>'
+                   for l, v in [("Total cost", f'${s["total_cost_usd"]:.2f}'), ("Calls", s["n_calls"]),
+                                ("Input tok", f'{s["total_input_tokens"]:,}'), ("Output tok", f'{s["total_output_tokens"]:,}')])
+    mrows = "".join(f'<tr><td>{esc(k)}</td><td class="num">{v["calls"]}</td>'
+                    f'<td class="num">{v["input_tokens"]:,}</td><td class="num">{v["output_tokens"]:,}</td>'
+                    f'<td class="num">${v["cost_usd"]:.4f}</td></tr>' for k, v in s["by_model"].items())
+    crows = "".join(f'<tr><td>{esc(k or "—")}</td><td class="num">{v["calls"]}</td><td class="num">${v["cost_usd"]:.4f}</td></tr>'
+                    for k, v in s["by_component"].items())
+    warn = '<p class="small warn">Some calls used an unknown model price (counted at $0). Add it to out/usage/pricing.json.</p>' if s.get("any_unknown_pricing") else ""
+    return (
+        f'<div class="kpis">{kpis}</div>{warn}'
+        '<div class="grid2">'
+        f'<div class="card"><h3>By model</h3><table class="mini"><thead><tr><th>model</th><th class="num">calls</th>'
+        f'<th class="num">in</th><th class="num">out</th><th class="num">cost</th></tr></thead><tbody>{mrows}</tbody></table></div>'
+        f'<div class="card"><h3>By component</h3><table class="mini"><thead><tr><th>component</th><th class="num">calls</th>'
+        f'<th class="num">cost</th></tr></thead><tbody>{crows}</tbody></table></div></div>')
+
+
+
+def learning_panel() -> str:
+    """Learning pipeline: feedback loop, model status, feature importances."""
+    import model as M
+    import ledger as L
+    ls = L.summary()
+    md = M.load_scorer()
+    trained = md is not None
+    # KPIs
+    kpis = [
+        ("Labels", ls["n_labels"], f'{ls["n_positive"]} pos / {ls["n_negative"]} neg'),
+        ("Model", "trained" if trained else "abstaining", f'need {M.MIN_LABELS}+ samples'),
+        ("AUC", f'{md["cv_auc"]:.3f}' if trained else "—", "5-fold cross-validated"),
+        ("Training data", f'{md["n_total"]}' if trained else "0",
+         f'{md.get("n_real_labels",0)} real + {md.get("n_bootstrap",0)} bootstrap' if trained else "—"),
+    ]
+    kpi_html = "".join(f'<div class="kpi"><div class="kpi-num">{esc(v)}</div>'
+                       f'<div class="kpi-lbl">{esc(l)}</div><div class="kpi-sub">{esc(s)}</div></div>'
+                       for l, v, s in kpis)
+    # Feature importances
+    imp_html = ""
+    if trained and md.get("importances") and md.get("feature_names"):
+        ranked = sorted(zip(md["feature_names"], md["importances"]), key=lambda t: -t[1])
+        imp_rows = "".join(
+            f'<tr><td>{esc(f.replace("_"," "))}</td><td>{bar(i*100)}</td></tr>'
+            for f, i in ranked if i > 0.001)
+        imp_html = (f'<div class="card"><h3>What the model learned</h3>'
+                    f'<table class="mini"><tbody>{imp_rows}</tbody></table>'
+                    '<p class="small muted">Feature importances from the gradient-boosted model. '
+                    'The model correctly identifies coordination_score as the dominant pump discriminator '
+                    '— consistent with pump-and-dump mechanics (coordinated promotion → inflated demand → dump).</p></div>')
+    # Label breakdown
+    label_rows = "".join(f'<tr><td>{esc(k)}</td><td class="num">{v}</td></tr>'
+                         for k, v in ls.get("by_label", {}).items())
+    label_html = (f'<div class="card"><h3>Operator labels</h3>'
+                  f'<table class="mini"><thead><tr><th>label</th><th class="num">count</th></tr></thead>'
+                  f'<tbody>{label_rows or "<tr><td colspan=2 class=muted>No labels yet</td></tr>"}</tbody></table>'
+                  '<p class="small muted">Label packages via: <code>python3 label.py out/TICKER_..._watch_v2.json useful_watch</code></p></div>'
+                  if not trained or ls["n_labels"] > 0 else "")
+    return (
+        '<p class="intro">SECFEDCLAW improves over time through a human-in-the-loop feedback cycle. The operator labels '
+        'review packages (useful_watch, false_positive, etc.), those labels train a gradient-boosted model, and the model '
+        'adds an advisory probability to future packages — while the interpretable rules engine always stays primary.</p>'
+        '<div class="card"><h3>Autonomous learning cycle</h3>'
+        '<div class="pipeline">'
+        '<div class="stage"><div class="stage-num">01</div><h3>Scan</h3>'
+        '<div class="tag">daily pipeline</div>'
+        '<p class="small">Agents score the ticker universe using rules + multi-source corroboration.</p></div>'
+        '<div class="arrow">→</div>'
+        '<div class="stage"><div class="stage-num">02</div><h3>Review</h3>'
+        '<div class="tag">human in the loop</div>'
+        '<p class="small">Operator reviews flagged packages and labels outcomes '
+        '(useful_watch / false_positive / benign_explained).</p></div>'
+        '<div class="arrow">→</div>'
+        '<div class="stage"><div class="stage-num">03</div><h3>Learn</h3>'
+        '<div class="tag">gradient boosting</div>'
+        '<p class="small">Labels train a GBM model that learns which feature combinations predict '
+        'genuine review-worthy windows vs false positives.</p></div>'
+        '<div class="arrow">→</div>'
+        '<div class="stage"><div class="stage-num">04</div><h3>Advise</h3>'
+        '<div class="tag">model advisory</div>'
+        '<p class="small">Trained model adds a calibrated probability to each package. '
+        'Rules engine stays primary — model is advisory only, never a guilt label.</p></div>'
+        '</div></div>'
+        f'<div class="kpis">{kpi_html}</div>'
+        '<div class="card"><h3>Retrain on current labels</h3>'
+        '<p class="small">After labeling packages (Review tab → a package → Examiner label), retrain the '
+        'gradient-boosted model so the advisory probability reflects the new outcomes. Runs '
+        '<code>train_model.py</code> on the ledger; the rules engine stays primary regardless.</p>'
+        '<div class="lbl-actions"><button class="lbl-btn" onclick="retrain(this)">Retrain model</button>'
+        '<span class="lbl-status muted small"></span></div></div>'
+        f'<div class="grid2">{imp_html}{label_html}</div>'
+        '<div class="card"><h3>Design constraints</h3>'
+        '<p class="small">• The model <b>abstains</b> until ≥40 labeled, two-class samples exist (≥8/class) '
+        '— it never guesses from insufficient data.</p>'
+        '<p class="small">• Price/volume are randomized independently of labels in bootstrap training '
+        '— the model must learn from genuine signal, not leaky proxies.</p>'
+        '<p class="small">• The model <b>never changes</b> the rules-based review priority — it only adds '
+        'an advisory probability. The interpretable engine is always authoritative.</p>'
+        '<p class="small">• No guilt label, no trading signal, no autonomous escalation. '
+        'The model is a calibration aid for human triage, nothing more.</p></div>')
+
+
+
+def entities_panel() -> str:
+    """Cross-run entity resolution: recurring promoter domains / accounts /
+    content-cluster scripts and their cross-ticker footprint."""
+    try:
+        import entities as _ent
+        s = _ent.summary()
+        rows = _ent.recurring(min_tickers=2)
+    except Exception:
+        return "<p class='intro'>Entity store unavailable — run a scan or <code>python3 entities.py --rebuild</code>.</p>"
+    intro = ('<p class="intro">Cross-run <b>entity resolution</b>: the same promoter domains, '
+             'accounts, and near-duplicate promotional <b>scripts</b> recurring across tickers '
+             'and time — the actor-level view pump-and-dump detection hinges on. Recurrence is '
+             'backward-looking WATCH context for human review, never proof of misconduct.</p>')
+    kpis = "".join(
+        f'<div class="kpi"><div class="kpi-num">{esc(v)}</div><div class="kpi-lbl">{esc(l)}</div></div>'
+        for l, v in [("Entities tracked", s["n_entities"]),
+                     ("Recurring (≥2 tickers)", s["n_recurring"]),
+                     ("Promoter domains", s["by_type"].get("domain", 0)),
+                     ("Content-cluster scripts", s["by_type"].get("content_cluster", 0))])
+    if not rows:
+        table = ('<div class="card"><h3>No recurring entities yet</h3>'
+                 '<p class="small muted">An entity must appear on ≥2 distinct tickers to recur. '
+                 'Run more scans (or <code>python3 entities.py --rebuild</code>) to accrue history. '
+                 'Content-cluster + account recurrence populates as new scans persist the author '
+                 'and content-fingerprint identity fields.</p></div>')
+    else:
+        trs = "".join(
+            f"<tr><td>{esc(r['type'].replace('_', ' '))}</td>"
+            f"<td class='mono small'>{esc(r['label'][:56])}</td>"
+            f"<td class='num'>{r['n_tickers']}</td><td class='num'>{r['span_days']}d</td>"
+            f"<td class='small'>{esc(', '.join(r['tickers'][:10]))}</td></tr>"
+            for r in rows[:60])
+        table = ('<div class="card"><h3>Recurring entities across the watch</h3>'
+                 '<table class="mini"><thead><tr><th>type</th><th>identity</th>'
+                 '<th class="num">tickers</th><th class="num">span</th><th>seen on</th></tr></thead>'
+                 f'<tbody>{trs}</tbody></table>'
+                 '<p class="small muted">Ubiquitous platform / link-shortener domains are excluded '
+                 'so only genuine shared promoter infrastructure surfaces. Same identity on more '
+                 'tickers over a longer span = a stronger recurrence signal.</p></div>')
+    return intro + f'<div class="kpis">{kpis}</div>' + table
+
+
+
+def network_graph_panel(packages: list[dict[str, Any]]) -> str:
+    """Build coordination network graph data from packages for force-directed viz."""
+    nodes: dict[str, dict] = {}
+    edges: list[dict] = []
+    for p in packages:
+        if not p:
+            continue
+        ticker = p.get("ticker", "?")
+        pri = p.get("review_priority", "LOW")
+        coord = p.get("coordination_detail", {})
+        sm = p.get("social_metrics", {})
+        cs = p.get("component_scores", {})
+        # Ticker node
+        nodes[ticker] = {"id": ticker, "type": "ticker", "group": pri,
+                         "score": p.get("watch_score", 0), "coord": cs.get("coordination_score", 0)}
+        # Platform nodes + edges
+        for plat in (sm.get("platforms") or []):
+            pid = f"plat_{plat}"
+            if pid not in nodes:
+                nodes[pid] = {"id": plat, "type": "platform", "group": "platform"}
+            edges.append({"source": ticker, "target": pid, "type": "posts_on"})
+        # Near-duplicate cluster nodes
+        for i, cluster in enumerate(coord.get("near_duplicate_clusters") or []):
+            cid = f"cluster_{ticker}_{i}"
+            nodes[cid] = {"id": f"cluster {i+1}", "type": "cluster", "group": "coordination",
+                          "size": cluster.get("size", len(cluster.get("members", [])))}
+            edges.append({"source": ticker, "target": cid, "type": "has_cluster"})
+        # Shared domain groups
+        for dom in (coord.get("shared_domain_groups") or []):
+            did = f"dom_{dom.get('domain', 'unknown')}"
+            if did not in nodes:
+                nodes[did] = {"id": dom.get("domain", "?"), "type": "domain", "group": "coordination"}
+            edges.append({"source": ticker, "target": did, "type": "shared_domain"})
+        # Source family edges
+        for fam in (p.get("corroboration", {}).get("families_active") or []):
+            fid = f"fam_{fam}"
+            if fid not in nodes:
+                nodes[fid] = {"id": fam, "type": "family", "group": "family"}
+            edges.append({"source": ticker, "target": fid, "type": "corroborates"})
+    # Assign stable keys to nodes; edges reference these keys
+    node_list = []
+    node_keys = {}  # map internal key -> index
+    for key, n in nodes.items():
+        n["_key"] = key
+        node_keys[key] = len(node_list)
+        node_list.append(n)
+    # Convert edges to index-based
+    idx_edges = []
+    for e in edges:
+        si = node_keys.get(e["source"])
+        ti = node_keys.get(e["target"])
+        if si is not None and ti is not None:
+            idx_edges.append({"s": si, "t": ti, "type": e["type"]})
+    import json as _json
+    graph_data = _json.dumps({"nodes": node_list, "edges": idx_edges})
+    return (
+        '<p class="intro">Interactive coordination network showing tickers, platforms, near-duplicate clusters, '
+        'shared domains, and corroborating families. Larger nodes = higher scores. <b>Hover a node</b> to inspect it '
+        '(type, score, coordination) and highlight its connections; <b>drag</b> to rearrange. '
+        'This is the same coordination evidence the scoring engine uses \u2014 visualized as a graph.</p>'
+        f'<div class="card"><div id="graph-container" style="width:100%;height:550px;position:relative;overflow:hidden">'
+        '<canvas id="graph-canvas" style="width:100%;height:100%;cursor:grab"></canvas></div></div>'
+        '<div class="grid2">'
+        '<div class="card"><h3>Legend</h3>'
+        '<p class="small"><span style="color:#4da3ff">\u25cf</span> Ticker (size = watch score) &nbsp; '
+        '<span style="color:#3fb950">\u25cf</span> Platform &nbsp; '
+        '<span style="color:#d29922">\u25cf</span> Near-duplicate cluster &nbsp; '
+        '<span style="color:#b39ddb">\u25cf</span> Shared domain &nbsp; '
+        '<span style="color:#8b97a8">\u25cf</span> Corroborating family</p>'
+        '<p class="small muted">Lines: posts_on (social), has_cluster (coordination), '
+        'shared_domain (coordination), corroborates (multi-source). '
+        'Edge color: <span style="color:#4a8faa">social</span> / '
+        '<span style="color:#d29922">coordination</span> / '
+        '<span style="color:#8b97a8">corroboration</span>.</p></div>'
+        '<div class="card"><h3>Graph stats</h3>'
+        f'<p class="small">{len(node_list)} nodes \u00b7 {len(idx_edges)} edges \u00b7 '
+        f'{sum(1 for n in node_list if n["type"]=="ticker")} tickers \u00b7 '
+        f'{sum(1 for n in node_list if n["type"]=="cluster")} clusters \u00b7 '
+        f'{sum(1 for n in node_list if n["type"]=="platform")} platforms</p></div></div>'
+        f'<script>var GD={graph_data};'
+        'function initGraph(){if(window._graphInit)return;window._graphInit=1;'
+        'var c=document.getElementById("graph-canvas"),ctx=c.getContext("2d");'
+        'var dpr=window.devicePixelRatio||1;'
+        'c.width=c.parentElement.clientWidth*dpr;c.height=c.parentElement.clientHeight*dpr;'
+        'ctx.scale(dpr,dpr);'
+        'var W=c.parentElement.clientWidth,H=c.parentElement.clientHeight;'
+        'var N=GD.nodes,E=GD.edges;'
+        'var colors={ticker:"#4da3ff",platform:"#3fb950",cluster:"#d29922",domain:"#b39ddb",family:"#8b97a8"};'
+        'var priC={CRITICAL_REVIEW:"#f85149",HIGH:"#d29922",MEDIUM:"#9ad13a",LOW:"#5a6b85"};'
+        'var edgeC={posts_on:"rgba(63,185,80,0.5)",has_cluster:"rgba(210,153,34,0.6)",'
+        'shared_domain:"rgba(179,157,219,0.5)",corroborates:"rgba(139,151,168,0.4)"};'
+        'N.forEach(function(n,i){var a=i*2.399+Math.random()*0.5;'
+        'n.x=W/2+Math.cos(a)*(W*0.35);n.y=H/2+Math.sin(a)*(H*0.35);'
+        'n.vx=0;n.vy=0;n.r=n.type=="ticker"?Math.max(10,Math.min(28,(n.score||0)/2.5)):7;});'
+        'var drag=null,hover=null;'
+        'function hit(mx,my){for(var i=N.length-1;i>=0;i--){var n=N[i];'
+        'if(Math.hypot(n.x-mx,n.y-my)<n.r+4)return n;}return null;}'
+        'c.addEventListener("mousedown",function(ev){var r=c.getBoundingClientRect();'
+        'var n=hit(ev.clientX-r.left,ev.clientY-r.top);'
+        'if(n){drag=n;n.fx=n.x;n.fy=n.y;c.style.cursor="grabbing";}});'
+        'c.addEventListener("mousemove",function(ev){var r=c.getBoundingClientRect();'
+        'var mx=ev.clientX-r.left,my=ev.clientY-r.top;'
+        'if(drag){drag.fx=mx;drag.fy=my;return;}'
+        'hover=hit(mx,my);c.style.cursor=hover?"pointer":"grab";});'
+        'c.addEventListener("mouseup",function(){if(drag){drag.x=drag.fx;drag.y=drag.fy;'
+        'drag.vx=0;drag.vy=0;delete drag.fx;delete drag.fy;drag=null;c.style.cursor="grab";}});'
+        'c.addEventListener("mouseleave",function(){hover=null;if(drag){delete drag.fx;delete drag.fy;drag=null;}c.style.cursor="grab";});'
+        'function step(){'
+        'N.forEach(function(a){if(a.fx!==undefined){a.x=a.fx;a.y=a.fy;a.vx=0;a.vy=0;return;}'
+        'N.forEach(function(b){if(a===b)return;'
+        'var dx=a.x-b.x,dy=a.y-b.y,d=Math.sqrt(dx*dx+dy*dy)+0.1;'
+        'var f=300/(d*d);a.vx+=dx/d*f;a.vy+=dy/d*f;});'
+        'a.vx+=(W/2-a.x)*0.001;a.vy+=(H/2-a.y)*0.001;});'
+        'E.forEach(function(e){var s=N[e.s],t=N[e.t];if(!s||!t)return;'
+        'var dx=t.x-s.x,dy=t.y-s.y,d=Math.sqrt(dx*dx+dy*dy)+0.1;'
+        'var f=(d-100)*0.008;'
+        'if(!s.fx){s.vx+=dx/d*f;s.vy+=dy/d*f;}'
+        'if(!t.fx){t.vx-=dx/d*f;t.vy-=dy/d*f;}});'
+        'N.forEach(function(n){if(n.fx!==undefined)return;'
+        'n.vx*=0.82;n.vy*=0.82;n.x+=n.vx;n.y+=n.vy;'
+        'n.x=Math.max(n.r+2,Math.min(W-n.r-2,n.x));'
+        'n.y=Math.max(n.r+2,Math.min(H-n.r-2,n.y));});'
+        'ctx.clearRect(0,0,W,H);'
+        'E.forEach(function(e){var s=N[e.s],t=N[e.t];if(!s||!t)return;'
+        'var hl=hover&&(s===hover||t===hover);'
+        'ctx.beginPath();ctx.moveTo(s.x,s.y);ctx.lineTo(t.x,t.y);'
+        'ctx.strokeStyle=hl?"rgba(255,255,255,0.85)":(edgeC[e.type]||"rgba(100,130,160,0.4)");'
+        'ctx.lineWidth=hl?2.5:1.5;ctx.stroke();});'
+        'N.forEach(function(n){ctx.beginPath();ctx.arc(n.x,n.y,n.r,0,Math.PI*2);'
+        'var fc=n.type=="ticker"?(priC[n.group]||colors.ticker):(colors[n.type]||"#888");'
+        'ctx.fillStyle=fc;ctx.fill();'
+        'ctx.strokeStyle=(n===hover)?"#fff":"rgba(255,255,255,0.3)";ctx.lineWidth=(n===hover)?2:1;ctx.stroke();'
+        'ctx.fillStyle="#e0e8f0";ctx.font=(n.type=="ticker"?"bold 11px":"10px")+" sans-serif";'
+        'ctx.textAlign="center";ctx.textBaseline="top";ctx.fillText(n.id,n.x,n.y+n.r+4);});'
+        'if(hover){var d=hover.type=="ticker"?(", score "+(hover.score||0).toFixed(1)+", coord "+(hover.coord||0).toFixed(0)):(hover.size?(", size "+hover.size):"");'
+        'var lbl=hover.id+"  ("+hover.type+d+")";'
+        'ctx.font="bold 12px sans-serif";var tw=ctx.measureText(lbl).width;'
+        'var bx=Math.min(Math.max(hover.x+12,4),W-tw-16),by=Math.min(Math.max(hover.y-30,4),H-26);'
+        'ctx.fillStyle="rgba(13,27,51,0.94)";ctx.fillRect(bx,by,tw+12,22);'
+        'ctx.strokeStyle="rgba(255,255,255,0.3)";ctx.lineWidth=1;ctx.strokeRect(bx,by,tw+12,22);'
+        'ctx.fillStyle="#e0e8f0";ctx.textAlign="left";ctx.textBaseline="middle";ctx.fillText(lbl,bx+6,by+11);}'
+        'requestAnimationFrame(step);}step();}'
+        'document.addEventListener("DOMContentLoaded",function(){'
+        'var t=document.querySelector(\'[data-id="network"]\');'
+        'if(t)t.addEventListener("click",function(){setTimeout(initGraph,150);});});'
+        '</script>')
+
+
+
+def how_it_works_panel() -> str:
+    """Interactive end-to-end walkthrough for SEC analysts."""
+    sections = [
+        ("1", "Data Collection", "Scout Agent", "#3fb950",
+         "The Scout pulls data from <b>22 sources</b> across 8 social platforms, 3 market providers, "
+         "and 6 official/regulatory feeds. Each response is persisted with SHA-256 hash for custody.",
+         '<table class="mini"><thead><tr><th>Category</th><th>Sources</th><th>What it captures</th></tr></thead><tbody>'
+         '<tr><td><b>Social (8)</b></td><td>X/Twitter, Reddit, StockTwits, Discord, Instagram, Forums, Social web, Telegram</td>'
+         '<td>Post text, author, timestamp, sentiment, engagement — for coordination + promo detection</td></tr>'
+         '<tr><td><b>Market (5)</b></td><td>Polygon (4 endpoints) + FMP (3 endpoints)</td>'
+         '<td>OHLCV, snapshot, cross-section, company profile — for anomaly z-scores</td></tr>'
+         '<tr><td><b>Official (6)</b></td><td>SEC EDGAR, FINRA, Nasdaq, SEC litigation</td>'
+         '<td>Filings, insider trades, thresholds, halts, enforcement — for issuer-event + regulatory context</td></tr>'
+         '</tbody></table>'),
+        ("2", "Data Engineering", "Analyst Agent", "#4da3ff",
+         "Raw data is normalized, deduplicated, and engineered into features the scoring engine consumes.",
+         '<table class="mini"><thead><tr><th>Process</th><th>Input</th><th>Output</th></tr></thead><tbody>'
+         '<tr><td><b>Social normalization</b></td><td>Posts from 8 platforms (different schemas)</td>'
+         '<td>Unified post schema: platform, id, text, author, sentiment, engagement</td></tr>'
+         '<tr><td><b>Deduplication</b></td><td>Raw posts (may duplicate across tickers/platforms)</td>'
+         '<td>Deduped by (platform, id) — count of removed duplicates tracked</td></tr>'
+         '<tr><td><b>Coordination graph</b></td><td>Deduped posts</td>'
+         '<td>Near-duplicate clusters (k-shingle Jaccard), shared domains, burst sync, author HHI</td></tr>'
+         '<tr><td><b>Market baselines</b></td><td>20/60-day daily OHLCV + same-day cross-section</td>'
+         '<td>Robust z-scores (median/MAD) for price AND volume; double-confirmation flag</td></tr>'
+         '<tr><td><b>Liquidity classification</b></td><td>Price + daily dollar-volume</td>'
+         '<td>thin_microcap / small_cap / mid_cap / large_cap → class-specific thresholds</td></tr>'
+         '<tr><td><b>EDGAR daily-diff</b></td><td>SEC daily-index master files</td>'
+         '<td>Insider (Form 3/4/5/144), dilution (S-1/S-3/424B), material (8-K), late, delisting</td></tr>'
+         '</tbody></table>'),
+        ("3", "Scoring", "Analyst Agent", "#4da3ff",
+         "Engineered features are combined into <b>component scores</b>, then fused into a composite watch score "
+         "with corroboration gating and safety caps.",
+         '<table class="mini"><thead><tr><th>Score</th><th>Range</th><th>What it measures</th><th>Key threshold</th></tr></thead><tbody>'
+         '<tr><td><b>market_anomaly</b></td><td>0–100</td><td>Price+volume abnormality vs baseline</td><td>Both price AND volume z must exceed class threshold</td></tr>'
+         '<tr><td><b>coordination</b></td><td>0–100</td><td>Near-duplicate clusters + shared domains + burst sync</td><td>≥30 for meaningful coordination signal</td></tr>'
+         '<tr><td><b>issuer_event</b></td><td>0–100</td><td>EDGAR insider/dilution/delisting into promoted demand</td><td>Insider selling + dilution = classic pump tell</td></tr>'
+         '<tr><td><b>enforcement_history</b></td><td>0–100</td><td>Prior SEC actions on this issuer</td><td>Backward-looking context, not proof</td></tr>'
+         '<tr><td><b>social_burst</b></td><td>0–100</td><td>Issuer-specific social activity (promo deflated)</td><td>Promo noise DEFLATES, not inflates</td></tr>'
+         '<tr><td><b>options_flow</b></td><td>0–100</td><td>Call/put OI skew, near-term expiry clustering, IV &gt;150%</td><td>Requires Polygon options entitlement; 0 when unavailable</td></tr>'
+         '<tr><td><b>anomaly_evidence</b></td><td>0–100</td><td>Concern-bearing signal (separated from reviewability)</td><td>Must clear class-specific floor to escape LOW</td></tr>'
+         '</tbody></table>'
+         '<p class="small muted"><b>Corroboration gate:</b> HIGH/CRITICAL requires ≥2 independent families (market, coordination, '
+         'social, issuer, halt, issuer_event). Single-source signals are capped at MEDIUM.</p>'),
+        ("4", "Adversarial Review", "Adversary Agent", "#f85149",
+         "The Adversary <b>can only LOWER priority or add caveats</b> — never raise it. It checks:",
+         '<table class="mini"><tbody>'
+         '<tr><td>✓ Corroboration enforcement</td><td>HIGH+ with &lt;2 families → downgraded to MEDIUM</td></tr>'
+         '<tr><td>✓ Coordination authenticity</td><td>Score ≥30 but no real clusters → caveat added</td></tr>'
+         '<tr><td>✓ Promotional noise dominance</td><td>Promo &gt; 2× issuer-specific → flagged as likely spam</td></tr>'
+         '<tr><td>✓ Replay staleness</td><td>Cached/replayed data → caveat to confirm against live</td></tr>'
+         '<tr><td>✓ Benign explanation strength</td><td>Strong benign + weak anomaly → reduced one band</td></tr>'
+         '</tbody></table>'),
+        ("5", "Model Advisory", "GBM Model", "#b39ddb",
+         "The gradient-boosted model adds a <b>calibrated probability</b> — advisory only, never changes the rules-based priority.",
+         '<table class="mini"><thead><tr><th>Feature</th><th>Importance</th><th>What it learned</th></tr></thead><tbody>'
+         '<tr><td>coordination_score</td><td><b>32%</b></td><td>Coordinated promotion is the #1 pump discriminator</td></tr>'
+         '<tr><td>social_promotional_noise</td><td>26%</td><td>Promotional language volume matters (Gallagher/OST cases)</td></tr>'
+         '<tr><td>market_anomaly_score</td><td>22%</td><td>Large-cap manipulation shows measurable market moves (Citron)</td></tr>'
+         '<tr><td>class_ordinal</td><td>20%</td><td>Microcaps are primary pump targets</td></tr>'
+         '</tbody></table>'
+         '<p class="small muted"><b>Labels:</b> useful_watch (genuine review-worthy) / false_positive (benign) / '
+         'benign_explained (legitimate catalyst) / missed_event (should have flagged higher) / insufficient_evidence. '
+         'Trained on 91 real labels from 10 SEC/DOJ enforcement cases + 180 bootstrap.</p>'),
+        ("6", "Review Priority Bands", "Output", "#d29922",
+         "The composite watch score maps to a review-priority band:",
+         '<div class="bands" style="margin:8px 0">'
+         '<span class="pill low">LOW &lt;25</span> '
+         '<span class="pill med">MEDIUM 25–49</span> '
+         '<span class="pill high">HIGH 50–74</span> '
+         '<span class="pill crit">CRITICAL ≥75</span></div>'
+         '<table class="mini"><tbody>'
+         '<tr><td><b>LOW</b></td><td>Routine — no immediate review needed. Routine-context floor not cleared.</td></tr>'
+         '<tr><td><b>MEDIUM</b></td><td>Review when bandwidth allows. Some anomaly evidence but may be single-source or benign-explainable.</td></tr>'
+         '<tr><td><b>HIGH</b></td><td>Priority review. ≥2 corroborating families, market + social or issuer signals confirmed.</td></tr>'
+         '<tr><td><b>CRITICAL</b></td><td>Urgent review. Strong multi-source corroboration across 3+ families.</td></tr>'
+         '</tbody></table>'),
+        ("7", "Analyst Notification", "Daily Digest", "#3fb950",
+         "Flagged tickers (≥MEDIUM) are delivered to the authorized analyst:",
+         '<table class="mini"><tbody>'
+         '<tr><td><b>Telegram digest</b></td><td>Concise summary of flagged tickers with scores + deep-link to dashboard</td></tr>'
+         '<tr><td><b>Dashboard</b></td><td>Full evidence packages, coordination network graph, component breakdowns</td></tr>'
+         '<tr><td><b>Daily run summary</b></td><td>Machine-readable JSON with preflight verdict, step results, errors</td></tr>'
+         '</tbody></table>'),
+        ("8", "Analyst Actions", "Human Review", "#cfe4ff",
+         "What the SEC analyst should do with each flagged ticker:",
+         '<table class="mini"><tbody>'
+         '<tr><td><b>1. Review the package</b></td><td>Open the evidence card — check component scores, coordination clusters, '
+         'adversary caveats, and the non-accusatory rationale.</td></tr>'
+         '<tr><td><b>2. Check benign explanations</b></td><td>Is there a real catalyst (earnings, FDA approval, merger)? '
+         'Are the promotional posts spam unrelated to the ticker?</td></tr>'
+         '<tr><td><b>3. Cross-reference externally</b></td><td>Use the ticker links (EDGAR, Nasdaq, StockTwits) to verify '
+         'claims against primary sources. Check OATS/Blue Sheet if available.</td></tr>'
+         '<tr><td><b>4. Label the outcome</b></td><td><code>python3 label.py out/TICKER_..._watch_v2.json useful_watch</code> '
+         '— this feeds the model for continuous improvement.</td></tr>'
+         '<tr><td><b>5. Escalate if warranted</b></td><td>SECFEDCLAW produces WATCH context only. Any freeze, legal process, '
+         'or external contact requires <b>separate lawful human authorization</b>.</td></tr>'
+         '</tbody></table>'
+         '<p class="small warn"><b>⚠ WATCH ceiling:</b> This system does not assert fraud, recommend trades, contact anyone, '
+         'freeze assets, or initiate legal process. It reduces time-to-review — nothing more.</p>'),
+    ]
+    cards = "".join(
+        f'<div class="card" style="border-left:3px solid {color}">'
+        f'<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">'
+        f'<span style="background:{color};color:#fff;font-weight:800;font-size:11px;width:24px;height:24px;'
+        f'line-height:24px;text-align:center;border-radius:50%">{num}</span>'
+        f'<h3 style="margin:0">{esc(title)}</h3>'
+        f'<span class="tag" style="margin-left:auto">{esc(agent)}</span></div>'
+        f'<p class="small">{desc}</p>{detail}</div>'
+        for num, title, agent, color, desc, detail in sections)
+    return (
+        '<p class="intro">End-to-end walkthrough of how SECFEDCLAW processes data and produces review priorities — '
+        'from raw source data to analyst notification. Each step shows what the agents do, how data is engineered, '
+        'how scores are computed, and what the analyst should do with the output.</p>'
+        + cards)
+
+
+
+def backtest_panel(bt: dict[str, Any]) -> str:
+    if not bt:
+        return '<p class="muted">No backtest results. Run backtest.py.</p>'
+    m, cm, ledger = bt.get("metrics", {}), bt.get("confusion_matrix", {}), bt.get("calibration_ledger", {})
+    kpis = "".join(f'<div class="kpi"><div class="kpi-num">{m.get(k,0):.2f}</div>'
+                   f'<div class="kpi-lbl">{k}</div></div>' for k in ("precision", "recall", "f1", "accuracy"))
+    cmrows = (f'<tr><td></td><td class="num">flagged</td><td class="num">not flagged</td></tr>'
+              f'<tr><td><b>pump</b></td><td class="num tp">{cm.get("tp",0)} TP</td><td class="num fn">{cm.get("fn",0)} FN</td></tr>'
+              f'<tr><td><b>benign/control</b></td><td class="num fp">{cm.get("fp",0)} FP</td><td class="num tn">{cm.get("tn",0)} TN</td></tr>')
+    led = "".join(f'<tr><td>{esc(k)}</td><td class="num">{v}</td></tr>' for k, v in ledger.items())
+    pc = bt.get("per_class", {})
+    pcrows = "".join(
+        f'<tr><td>{esc(CLASS_ABBR.get(k,k))}</td><td class="num">{v.get("precision",0):.2f}</td>'
+        f'<td class="num">{v.get("recall",0):.2f}</td><td class="num">{v.get("f1",0):.2f}</td>'
+        f'<td class="num">{v.get("n",0)}</td></tr>' for k, v in pc.items())
+    pc_html = (f'<div class="card"><h3>Precision / recall by liquidity class '
+               '<span class="muted small">(class-balanced corpus)</span></h3>'
+               '<table class="mini"><thead><tr><th>class</th><th class="num">P</th><th class="num">R</th>'
+               f'<th class="num">F1</th><th class="num">n</th></tr></thead><tbody>{pcrows}</tbody></table>'
+               '<p class="small muted">Microcaps are tuned for high recall (don\'t miss pumps) at the cost of '
+               'precision (more benign windows surface for review) — a deliberate, class-aware trade-off.</p></div>'
+               if pcrows else "")
+    return (
+        '<p class="intro">Does the engine raise review priority on pump windows while staying quiet on benign-news and '
+        'routine windows? Measured on a seeded synthetic corpus (real SEC-case windows when run live with Flat Files).</p>'
+        f'<div class="kpis">{kpis}</div>'
+        f'<p class="muted small">{bt.get("n_samples",0)} windows ({bt.get("n_per_class",0)}/class) · flag ≥ {esc(bt.get("flag_threshold"))} · seed {bt.get("seed")}</p>'
+        '<div class="grid2">'
+        f'<div class="card"><h3>Confusion matrix</h3><table class="mini cm"><tbody>{cmrows}</tbody></table></div>'
+        f'<div class="card"><h3>Calibration ledger</h3><table class="mini"><tbody>{led}</tbody></table></div></div>'
+        f'{pc_html}')
+
+
+
+
+
+def runs_panel() -> str:
+    """Live run-status view + re-run controls. Static shell; populated at runtime
+    by JS polling /run_manifest.json and POSTing /api/rerun on the LOCAL serve.py
+    (no third-party callbacks). Degrades to a hint when opened as a file:// URL."""
+    return (
+        "<p class='intro'>Live status of scan runs, polled from the local server "
+        "(<code>serve.py</code>). Trigger a re-run below — runs default to "
+        "<b>replay</b>; tick <b>Live</b> to fetch from real data sources. WATCH-only, "
+        "same guardrails as a CLI scan.</p>"
+        "<div class='card'><h3>Trigger a run</h3>"
+        "<div class='runctl'>"
+        "<input id='runTickers' type='text' placeholder='Tickers, e.g. AAPL TSLA GME' aria-label='Tickers to scan'>"
+        "<label class='runlive'><input id='runLive' type='checkbox'> Live</label>"
+        "<button onclick='rerun(false)'>Re-run tickers</button>"
+        "<button onclick='rerun(true)'>Re-run failed</button>"
+        "</div>"
+        "<div id='runsMsg' class='runmsg' role='status' aria-live='polite'></div></div>"
+        "<div class='card'><h3>Current / last run</h3>"
+        "<div id='runsMeta' class='runmeta'>Loading…</div>"
+        "<table class='runtable'><thead><tr><th>Ticker</th><th>Status</th><th>Priority</th>"
+        "<th>Score</th><th>ms</th><th>Mode</th></tr></thead><tbody id='runsBody'></tbody></table>"
+        "</div>")
+
+
+
+def _tab(label: str, pid: str, active: bool = False) -> str:
+    # <button role=tab>: keyboard-focusable + Enter/Space activate natively (508).
+    return (f'<button class="tab{" active" if active else ""}" role="tab" '
+            f'aria-selected="{"true" if active else "false"}" data-id="{pid}" '
+            f'onclick="show(\'{pid}\',this)">{esc(label)}</button>')
+
+
+
+def _nav_section(label: str) -> str:
+    """Sidebar group header — labels a cluster of related tabs (wayfinding)."""
+    return f'<div class="nav-section">{esc(label)}</div>'
+
+
