@@ -225,14 +225,22 @@ class DataConnector:
         return self._replay(f"polygon_prev_{ticker}", f"*/polygon_prev_{ticker}.json", f"*prev_aggregate_{ticker.lower()}*.json")
 
     def polygon_grouped_daily(self) -> Fetch:
-        """Whole-market one-day OHLCV: the cross-sectional baseline population."""
+        """Whole-market one-day OHLCV: the cross-sectional baseline population.
+
+        Walks back to the most recent TRADING day. A fixed calendar day-1 lands on
+        a weekend/holiday on Mondays and after holidays and returns an EMPTY set,
+        which was previously cached as a 'live' success — silently killing the
+        cross-sectional family (and --discover) ~2 runs a week. We now step back
+        up to 6 calendar days and take the first day with actual results; an empty
+        day is skipped, not cached."""
         if self.live_available():
             pk = self.env.get("POLYGON_API_KEY", "")
-            day = time.strftime("%Y-%m-%d", time.gmtime(time.time() - 86400))
-            url = f"https://api.polygon.io/v2/aggs/grouped/locale/us/market/stocks/{day}?adjusted=true&apiKey={pk}"
-            status, data = self._http_json(url)
-            if status == 200 and data:
-                return self._live("polygon_grouped_daily", status, data, url)
+            for back in range(1, 7):  # today-1 .. today-6 covers weekends + holidays
+                day = time.strftime("%Y-%m-%d", time.gmtime(time.time() - back * 86400))
+                url = f"https://api.polygon.io/v2/aggs/grouped/locale/us/market/stocks/{day}?adjusted=true&apiKey={pk}"
+                status, data = self._http_json(url)
+                if status == 200 and isinstance(data, dict) and (data.get("resultsCount") or data.get("results")):
+                    return self._live("polygon_grouped_daily", status, data, url)
         return self._replay("polygon_grouped_daily", "*grouped_daily*.json", "*grouped_daily_market*.json")
 
     def polygon_snapshot(self, ticker: str) -> Fetch:
