@@ -128,3 +128,25 @@ class TestNoPII(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class TestGroupedDailyTradingDay(unittest.TestCase):
+    """grouped-daily must walk back past weekend/holiday empties to a real
+    trading day, instead of caching an empty set as a live success."""
+    def test_walks_back_past_empty_day(self):
+        c = connectors.DataConnector.__new__(connectors.DataConnector)
+        c._live_ok = True
+        c.env = {"POLYGON_API_KEY": "k"}
+        calls = {"n": 0}
+
+        def fake_http_json(url, headers=None):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                return 200, {"resultsCount": 0, "results": []}      # weekend/holiday
+            return 200, {"resultsCount": 2, "results": [{"T": "AAA"}, {"T": "BBB"}]}
+
+        c._http_json = fake_http_json
+        f = c.polygon_grouped_daily()
+        self.assertEqual(f.mode, "live")
+        self.assertEqual(calls["n"], 2)                              # skipped the empty day
+        self.assertEqual((f.data or {}).get("resultsCount"), 2)
