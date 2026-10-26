@@ -1,0 +1,192 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "secfedclaw-watch-v2",
+    "output": "architecture.html",
+    "quality_profile": "showcase"
+  },
+  "layout": {
+    "mode": "grid",
+    "origin": [
+      40,
+      60
+    ],
+    "cols": 4,
+    "gapX": 80,
+    "gapY": 110
+  },
+  "components": [
+    {
+      "id": "sources",
+      "type": "external",
+      "label": "Data sources",
+      "sublabel": "market, SEC, social",
+      "row": 0,
+      "col": 0
+    },
+    {
+      "id": "connectors",
+      "type": "backend",
+      "label": "Connectors",
+      "sublabel": "connectors.py live or replay",
+      "row": 0,
+      "col": 1
+    },
+    {
+      "id": "features",
+      "type": "backend",
+      "label": "Feature families",
+      "sublabel": "features/ market, social, edgar",
+      "row": 0,
+      "col": 2
+    },
+    {
+      "id": "scoring",
+      "type": "backend",
+      "label": "Scoring engine",
+      "sublabel": "scoring_v2.py",
+      "row": 0,
+      "col": 3
+    },
+    {
+      "id": "agents",
+      "type": "backend",
+      "label": "Agent pipeline",
+      "sublabel": "agents.py role-bounded",
+      "row": 1,
+      "col": 3
+    },
+    {
+      "id": "scan",
+      "type": "backend",
+      "label": "Scan and daily run",
+      "sublabel": "scan.py, pipeline.py, daily.py",
+      "row": 1,
+      "col": 2
+    },
+    {
+      "id": "custody",
+      "type": "database",
+      "label": "Custody artifacts",
+      "sublabel": "replay cache, ledger, out/",
+      "row": 1,
+      "col": 1
+    },
+    {
+      "id": "model",
+      "type": "backend",
+      "label": "Advisory model",
+      "sublabel": "model.py, backtest.py",
+      "row": 2,
+      "col": 1
+    },
+    {
+      "id": "dashboard",
+      "type": "frontend",
+      "label": "Dashboard",
+      "sublabel": "dashboard_v2.py offline HTML",
+      "row": 2,
+      "col": 2
+    },
+    {
+      "id": "serve",
+      "type": "frontend",
+      "label": "Local server",
+      "sublabel": "serve.py 127.0.0.1",
+      "row": 2,
+      "col": 3
+    }
+  ],
+  "connections": [
+    {
+      "id": "sources-connectors",
+      "from": "sources",
+      "to": "connectors",
+      "label": "live fetch"
+    },
+    {
+      "id": "connectors-features",
+      "from": "connectors",
+      "to": "features",
+      "label": "signals"
+    },
+    {
+      "id": "features-scoring",
+      "from": "features",
+      "to": "scoring",
+      "label": "evidence"
+    },
+    {
+      "id": "scoring-agents",
+      "from": "scoring",
+      "to": "agents",
+      "label": "packages",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelDy": 24
+    },
+    {
+      "id": "agents-scan",
+      "from": "agents",
+      "to": "scan",
+      "label": "review queue"
+    },
+    {
+      "id": "scan-custody",
+      "from": "scan",
+      "to": "custody",
+      "label": "writes"
+    },
+    {
+      "id": "custody-connectors",
+      "from": "custody",
+      "to": "connectors",
+      "label": "replay",
+      "variant": "dashed",
+      "fromSide": "top",
+      "toSide": "bottom"
+    },
+    {
+      "id": "custody-model",
+      "from": "custody",
+      "to": "model",
+      "label": "labels",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelDy": 24
+    },
+    {
+      "id": "scan-dashboard",
+      "from": "scan",
+      "to": "dashboard",
+      "label": "renders",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelDy": 24
+    },
+    {
+      "id": "dashboard-serve",
+      "from": "dashboard",
+      "to": "serve",
+      "label": "serves"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Flow",
+      "items": [
+        "Connectors to features to scoring to agents to review queue"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Boundary",
+      "items": [
+        "Review-priority only, never trading signals",
+        "Server binds to loopback"
+      ]
+    }
+  ]
+}

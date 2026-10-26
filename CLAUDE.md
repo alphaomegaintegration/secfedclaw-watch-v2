@@ -49,3 +49,5 @@ auto-sync across all worktrees, run `gbrain autopilot --install` once per
 machine — gbrain's daemon handles incremental refresh on a schedule.
 
 <!-- gstack-gbrain-search-guidance:end -->
+
+- Orientation: read `docs/architecture/architecture.json` (or the CI-rendered diagram) and `graphify-out/GRAPH_REPORT.md` before exploring the code.
